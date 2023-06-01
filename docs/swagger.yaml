@@ -1,0 +1,142 @@
+basePath: /
+consumes:
+    - application/json
+host: some-url.com
+info:
+    description: Documentation of our awesome API.
+    title: awesome.
+    version: 1.0.0
+paths:
+    /blocksubmissions:
+        post:
+            operationId: builderSubmission
+            parameters:
+                - description: Slot Number From Which Needed
+                  format: uint64
+                  in: query
+                  name: slot_lower
+                  type: integer
+                  x-go-name: SlotLower
+                - description: Slot Number To Which Needed
+                  format: uint64
+                  in: query
+                  name: slot_upper
+                  type: integer
+                  x-go-name: SlotUpper
+            responses:
+                "200":
+                    $ref: '#/responses/validResponse'
+                "204":
+                    $ref: '#/responses/emptyResponse'
+                "400":
+                    $ref: '#/responses/invalidParameter'
+                "500":
+                    $ref: '#/responses/serverError'
+            summary: Get Block Submissions Of Builders.
+            tags:
+                - Reporter-API
+    /payloaddelivered:
+        post:
+            operationId: proposerPayloadDelivered
+            parameters:
+                - description: Slot Number From Which Needed
+                  format: uint64
+                  in: query
+                  name: slot_lower
+                  type: integer
+                  x-go-name: SlotLower
+                - description: Slot Number To Which Needed
+                  format: uint64
+                  in: query
+                  name: slot_upper
+                  type: integer
+                  x-go-name: SlotUpper
+            responses:
+                "200":
+                    $ref: '#/responses/validResponsePayloaddelivered'
+                "204":
+                    $ref: '#/responses/emptyResponse'
+                "400":
+                    $ref: '#/responses/invalidParameter'
+                "500":
+                    $ref: '#/responses/serverError'
+            summary: Get Proposer Payload Delivered.
+            tags:
+                - Reporter-API
+    /proposerblindedblocks:
+        post:
+            operationId: proposerBlindedBlock
+            parameters:
+                - description: Slot Number From Which Needed
+                  format: uint64
+                  in: query
+                  name: slot_lower
+                  type: integer
+                  x-go-name: SlotLower
+                - description: Slot Number To Which Needed
+                  format: uint64
+                  in: query
+                  name: slot_upper
+                  type: integer
+                  x-go-name: SlotUpper
+            responses:
+                "200":
+                    $ref: '#/responses/validResponseProposerblindedblocks'
+                "204":
+                    $ref: '#/responses/emptyResponse'
+                "400":
+                    $ref: '#/responses/invalidParameter'
+                "500":
+                    $ref: '#/responses/serverError'
+            summary: Get Proposer Payload Delivered.
+            tags:
+                - Reporter-API
+produces:
+    - application/json
+responses:
+    emptyResponse:
+        description: No Builder Submissions
+        headers:
+            slot:
+                description: Empty List Of Bids
+                items: {}
+                type: array
+    invalidParameter:
+        description: Invalid Parameter Provided
+        headers:
+            error:
+                description: Error Parameters
+                type: string
+    serverError:
+        description: Server Error
+        headers:
+            error:
+                description: Error In The Server
+                type: string
+    validResponse:
+        description: Blocks Provided Correctly
+        headers:
+            builder_bids:
+                description: Builder Bids
+                items: {}
+                type: array
+    validResponsePayloaddelivered:
+        description: Blocks Provided Correctly
+        headers:
+            payload_delivered:
+                description: Delivered Payloads
+                items: {}
+                type: array
+    validResponseProposerblindedblocks:
+        description: Blocks Provided Correctly
+        headers:
+            builder_blinded_blocks:
+                description: Blinded Beacon Blocks
+                items: {}
+                type: array
+schemes:
+    - http
+securityDefinitions:
+    basic:
+        type: basic
+swagger: "2.0"

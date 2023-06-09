@@ -23,7 +23,11 @@ func (b *MultiBeaconClient) SubscribeToHeadEvents(ctx context.Context, headChann
 		case slotHead := <-headChannel:
 
 			// check if head is already processed from another client
-			if slotHead.Slot <= b.BeaconData.CurrentSlot {
+			b.BeaconData.Mu.Lock()
+			currentSlot := b.BeaconData.CurrentSlot
+			b.BeaconData.Mu.Unlock()
+
+			if slotHead.Slot <= currentSlot {
 				// head already processed, do not process/contaminate the data
 				continue
 			}
@@ -43,7 +47,7 @@ func (b *MultiBeaconClient) SubscribeToHeadEvents(ctx context.Context, headChann
 			// update proposer map
 			// check if the current slot is at the edge of an epoch either behind or just infront
 			// if so update the proposer map
-			currentSlot := slotHead.Slot
+			currentSlot = slotHead.Slot
 			currentEpoch := currentSlot / 32
 
 			if (currentSlot+1)/32 != currentEpoch || (currentSlot-1)/32 != currentEpoch {

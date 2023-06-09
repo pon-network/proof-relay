@@ -137,7 +137,7 @@ PON Relay comes with a metabase docker-compose file. It can be used by following
 
 ## API Spec
 [![API Spec](
-https://validator.swagger.io/validator/?url=https%3A%2F%2Fgithub.com%2Fpon-pbs%2FbbRelay%2Fblob%2Fmain%2Fdocs%2Fswagger.yaml)](./docs/swagger.yaml)
+https://validator.swagger.io/validator/?url=https%3A%2F%2Fgithub.com%2Fbsn-eng%2FPon-relay%2FDocs%2Fswagger.yaml)](./docs/swagger.yaml)
 
 API Spec Is Generated Using Go-Swagger for Open API Implementation. You can follow the specification by visiting the [API-Spec](./docs/APISpec.md)
 If you want to make changes to the swagger file, run the following commands-

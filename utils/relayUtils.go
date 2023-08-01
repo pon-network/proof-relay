@@ -6,12 +6,14 @@ import (
 	"sync"
 	"time"
 
-	beaconclient "github.com/bsn-eng/pon-wtfpl-relay/beaconinterface"
-	"github.com/bsn-eng/pon-wtfpl-relay/database"
-	ponpool "github.com/bsn-eng/pon-wtfpl-relay/ponPool"
-	"github.com/bsn-eng/pon-wtfpl-relay/redisPackage"
+	relayTypes "github.com/bsn-eng/pon-golang-types/relay"
 	"github.com/go-redis/redis/v9"
 	"github.com/sirupsen/logrus"
+
+	beaconclient "github.com/pon-pbs/bbRelay/beaconinterface"
+	"github.com/pon-pbs/bbRelay/database"
+	ponpool "github.com/pon-pbs/bbRelay/ponPool"
+	"github.com/pon-pbs/bbRelay/redisPackage"
 )
 
 type RelayUtils struct {
@@ -26,9 +28,17 @@ type RelayUtils struct {
 
 func NewRelayUtils(db *database.DatabaseInterface, beaconClient *beaconclient.MultiBeaconClient, ponPool ponpool.PonRegistrySubgraph, redisInterface redisPackage.RedisInterface) *RelayUtils {
 	proposerutils := &ProposerUtils{
-		ValidatorsLast: make(map[string]string),
-		Mu:             sync.Mutex{},
+		ProposerStatus: ProposerUpdates{
+			Mu:             sync.Mutex{},
+			ValidatorsLast: make(map[string]string),
+		},
+		Validators: relayTypes.ValidatorIndexes{
+			ValidatorPubkeyIndex: make(map[string]uint64),
+			ValidatorIndexPubkey: make(map[uint64]string),
+			Mu:                   sync.Mutex{},
+		},
 		RedisInterface: &redisInterface,
+		BeaconClient:   beaconClient,
 		Log: *logrus.NewEntry(logrus.New()).WithFields(logrus.Fields{
 			"package": "RelayUtils",
 			"utils":   "Proposer",
@@ -72,7 +82,6 @@ func (relayUtils *RelayUtils) StartUtils() (err error) {
 	go relayUtils.ReporterUpdate()
 
 	return nil
-
 }
 
 func (relay *RelayUtils) ProposerUpdate() {
@@ -102,24 +111,45 @@ func (proposer *ProposerUtils) GetValidators(ponPool ponpool.PonRegistrySubgraph
 		return
 	}
 
-	proposer.Mu.Lock()
-	defer proposer.Mu.Unlock()
+	proposer.ProposerStatus.Mu.Lock()
+	defer proposer.ProposerStatus.Mu.Unlock()
 
+	newProposers := []string{}
 	proposer.Log.Infof("Updating %d Validators in Redis...", len(validators))
 	for _, validator := range validators {
-		if validator.Status == proposer.ValidatorsLast[validator.ValidatorPubkey] {
+		if validator.Status == proposer.ProposerStatus.ValidatorsLast[validator.ValidatorPubkey] {
 			continue
 		}
 		err = proposer.SetValidatorStatus(validator.ValidatorPubkey, validator.Status)
 		if err != nil {
 			proposer.Log.WithError(err).Error("failed to set block builder status in redis")
 		}
-		proposer.ValidatorsLast[validator.ValidatorPubkey] = validator.Status
+		proposer.ProposerStatus.ValidatorsLast[validator.ValidatorPubkey] = validator.Status
+		proposer.Validators.Mu.Lock()
+		_, ok := proposer.Validators.ValidatorPubkeyIndex[validator.ValidatorPubkey]
+		if !ok {
+			newProposers = append(newProposers, validator.ValidatorPubkey)
+		}
+		proposer.Validators.Mu.Unlock()
+
 	}
+	if len(newProposers) != 0 {
+		proposer.Log.Infof("Updating Proposer Index For %d Validators", len(newProposers))
+		go proposer.ValidatorIndex(newProposers)
+	}
+
 	proposer.Log.Infof("Updating %d Validators in Database...", len(validators))
 	err = db.PutValidators(validators)
 	if err != nil {
 		proposer.Log.WithError(err).Error("failed to save block Validators")
+	}
+}
+
+func (proposer *ProposerUtils) ValidatorIndex(proposers []string) {
+	ValidatorGroups := chunkSlice(proposers, 10)
+
+	for _, validators := range ValidatorGroups {
+		go proposer.BeaconClient.GetValidatorIndex(validators, &proposer.Validators)
 	}
 }
 
@@ -199,13 +229,26 @@ func (relay *RelayUtils) BuilderStatus(builder string) (BuilderStatus bool, err 
 	return status, err
 }
 
-func (relay *RelayUtils) ValidatorIndexToPubkey(index uint64) (PublicKey, error) {
-	validator, err := relay.beaconClient.RetrieveValidatorByIndex(index)
-	if err != nil {
-		return PublicKey{}, err
+func (relay *RelayUtils) ValidatorIndexToPubkey(index uint64, network uint64) (PublicKey, error) {
+	relay.proposerUtils.Validators.Mu.Lock()
+	defer relay.proposerUtils.Validators.Mu.Unlock()
+	validator := relay.proposerUtils.Validators.ValidatorIndexPubkey[index]
+
+	// For custom testnet
+	if network == 2 {
+		if index == 0 {
+			validator = "0xa99a76ed7796f7be22d5b7e85deeb7c5677e88e511e0b337618f8c4eb61349b4bf2d153f649f7b53359fe8b94a38e44c"
+		}
+		if index == 1 {
+			validator = "0xb89bebc699769726a318c8e9971bd3171297c61aea4a6578a7a4f94b547dcba5bac16a89108b6b6a1fe3695d1a874a0b"
+		}
+		if index == 2 {
+			validator = "0xa3a32b0f8b4ddb83f1a0a853d81dd725dfe577d4f4c3db8ece52ce2b026eca84815c1a7e8e92a4de3d755733bf7e4a9b"
+		}
 	}
+
 	var validatorPublicKey PublicKey
-	err = validatorPublicKey.UnmarshalText([]byte(validator.Validator.Pubkey))
+	err := validatorPublicKey.UnmarshalText([]byte(validator))
 	if err != nil {
 		return PublicKey{}, err
 	}

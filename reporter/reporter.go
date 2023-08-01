@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/bsn-eng/pon-wtfpl-relay/database"
 	"github.com/gorilla/mux"
+	"github.com/pon-pbs/bbRelay/database"
 	"github.com/sirupsen/logrus"
 )
 

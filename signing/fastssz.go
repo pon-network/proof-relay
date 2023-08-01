@@ -4,9 +4,10 @@ import (
 	"errors"
 
 	"github.com/attestantio/go-eth2-client/spec/phase0"
-	bls "github.com/bsn-eng/pon-wtfpl-relay/bls"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+
+	bls "github.com/pon-pbs/bbRelay/bls"
 )
 
 func (f *ForkVersion) FromSlice(s []byte) error {

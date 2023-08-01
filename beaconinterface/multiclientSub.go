@@ -4,6 +4,7 @@ import (
 	"context"
 
 	beaconTypes "github.com/bsn-eng/pon-golang-types/beaconclient"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 func (b *MultiBeaconClient) SubscribeToHeadEvents(ctx context.Context, headChannel chan beaconTypes.HeadEventData) {
@@ -21,7 +22,7 @@ func (b *MultiBeaconClient) SubscribeToHeadEvents(ctx context.Context, headChann
 		case <-ctx.Done():
 			return
 		case slotHead := <-headChannel:
-
+			log.Info("Received head event", "slot", slotHead.Slot, "blockHash", slotHead.Block)
 			// check if head is already processed from another client
 			b.BeaconData.Mu.Lock()
 			currentSlot := b.BeaconData.CurrentSlot
@@ -43,19 +44,16 @@ func (b *MultiBeaconClient) SubscribeToHeadEvents(ctx context.Context, headChann
 				// current slot -1, current slot, current slot +1
 				go b.UpdateRandaoMap(slotHead.Slot - 1 + i)
 			}
-
 			// update proposer map
 			// check if the current slot is at the edge of an epoch either behind or just infront
 			// if so update the proposer map
 			currentSlot = slotHead.Slot
 			currentEpoch := currentSlot / 32
-
 			if (currentSlot+1)/32 != currentEpoch || (currentSlot-1)/32 != currentEpoch {
 				// We are at the edge of an epoch, update the proposer map
 				// currentSolot+1 is the first slot of the next epoch means head at the end of the current epoch
 				// currentSlot-1 is the last slot of the previous epoch means head at the start of the current epoch
 				go b.UpdateValidatorMap()
-				go b.UpdateKnownValidators(currentSlot)
 			}
 
 			// Clean up the proposer map for slots that are older than 2 epochs
@@ -65,17 +63,16 @@ func (b *MultiBeaconClient) SubscribeToHeadEvents(ctx context.Context, headChann
 			// to be able to verify the signature of the block
 			b.BeaconData.Mu.Lock()
 			for k := range b.BeaconData.SlotProposerMap {
-				if k < currentSlot-64 {
+				if int64(k) < int64(currentSlot)-64 {
 					delete(b.BeaconData.SlotProposerMap, k)
 				}
 			}
 			for k := range b.BeaconData.RandaoMap {
-				if k < currentSlot-64 {
+				if int64(k) < int64(currentSlot)-64 {
 					delete(b.BeaconData.RandaoMap, k)
 				}
 			}
 			b.BeaconData.Mu.Unlock()
-
 		}
 	}
 
@@ -94,6 +91,12 @@ func (b *MultiBeaconClient) SubscribeToPayloadAttributesEvents(ctx context.Conte
 	for {
 		select {
 		case payloadAttrs := <-attrsC:
+
+			log.Info("Received payload attributes event", 
+			"slot", payloadAttrs.ProposalSlot, 
+			"withdrawals", len(payloadAttrs.PayloadAttributes.Withdrawals), 
+			"proposer_index", payloadAttrs.ProposerIndex)
+
 			b.BeaconData.Mu.Lock()
 			b.BeaconData.SlotPayloadAttributesMap[payloadAttrs.ProposalSlot] = payloadAttrs
 			b.BeaconData.Mu.Unlock()
@@ -101,7 +104,7 @@ func (b *MultiBeaconClient) SubscribeToPayloadAttributesEvents(ctx context.Conte
 			// Clean up old data
 			b.BeaconData.Mu.Lock()
 			for slot := range b.BeaconData.SlotPayloadAttributesMap {
-				if slot < payloadAttrs.ProposalSlot-64 {
+				if int64(slot) < int64(payloadAttrs.ProposalSlot)-64 {
 					delete(b.BeaconData.SlotPayloadAttributesMap, slot)
 				}
 			}

@@ -1,0 +1,47 @@
+@startuml
+Searcher -> Builder :Transaction Bundle
+
+participant Relay 
+participant Proposer
+skinparam sequenceMessageAlign center
+== Round 1 ==
+Builder -> Builder:
+note left
+ **Block Preparation**
+ ----
+ * Build Block Using Bundles, Private Orderflow
+    and Transaction Pool
+ * Calculate RPBS Info, Blinded Message And
+    Signature
+ * Prepare Transaction To Pay Payout Pool
+end note
+Builder -> Relay: Builder Bid
+Relay -> Relay:
+note right
+ **Block Validation**
+ ----
+ * Validate Bid Parameters, Signatures And RPS
+ * Prepare Slot Header And Payload For The
+    Proposer
+end note
+== Round 2 ==
+Proposer -> Relay: Get Block Header
+Relay -> Proposer: Block Header
+Proposer -> Proposer: 
+note right
+ **Validate Block**
+ ----
+ * Validate Block Signature
+ * Provide Beacon Chain Signature For The Block
+end note
+Proposer -> Relay: Get Payload
+Relay -> Builder: Block Signature
+Builder -> Builder: 
+note left
+ **Submit Block**
+ ----
+ * Validate Block Signature
+ * Submit Block To Beacon Chain
+end note
+Builder -> Proposer: Block Transactions
+@enduml

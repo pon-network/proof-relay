@@ -16,19 +16,16 @@ func (b *beaconClient) fetchBeacon(u *url.URL, dst any) error {
 	*/
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("invalid request for %s: %w", u, err)
 	}
 	req.Header.Set("accept", "application/json")
-
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("client refused for %s: %w", u, err)
 	}
 	defer resp.Body.Close()
-
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("could not read response body for %s: %w", u, err)
@@ -94,4 +91,16 @@ func (b *beaconClient) postBeacon(u *url.URL, src any) error {
 	}
 
 	return nil
+}
+
+type ValidatorBeacon struct {
+	Execution bool                      `json:"execution_optimistic"`
+	Finalized bool                      `json:"finalized"`
+	Data      []ValidatorResponsePubKey `json:"data"`
+}
+type ValidatorResponsePubKey struct {
+	Index     string                 `json:"index"`
+	Balance   string                 `json:"balance"`
+	Status    string                 `json:"status"`
+	Validator map[string]interface{} `json:"validator"`
 }

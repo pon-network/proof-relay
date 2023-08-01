@@ -1,11 +1,11 @@
-module github.com/bsn-eng/pon-wtfpl-relay
+module github.com/pon-pbs/bbRelay
 
 go 1.20
 
 require (
 	github.com/attestantio/go-builder-client v0.3.0
 	github.com/attestantio/go-eth2-client v0.16.3
-	github.com/bsn-eng/pon-golang-types v0.0.0-20230531093159-619257e4d00e
+	github.com/bsn-eng/pon-golang-types v0.0.0-20230726145725-0542417d84d5
 	github.com/consensys/gnark-crypto v0.11.0
 	github.com/eclipse/paho.mqtt.golang v1.4.2
 	github.com/ethereum/go-ethereum v1.11.6
@@ -17,6 +17,7 @@ require (
 	github.com/holiman/uint256 v1.2.2
 	github.com/lib/pq v1.10.9
 	github.com/newrelic/go-agent/v3 v3.21.1
+	github.com/prysmaticlabs/go-bitfield v0.0.0-20210809151128-385d8c5e3fb7
 	github.com/r3labs/sse/v2 v2.10.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.1
@@ -46,7 +47,6 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/prysmaticlabs/go-bitfield v0.0.0-20210809151128-385d8c5e3fb7 // indirect
 	github.com/rogpeppe/go-internal v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/testify v1.8.3 // indirect

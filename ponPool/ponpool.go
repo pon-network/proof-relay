@@ -36,7 +36,7 @@ func (s *PonRegistrySubgraph) GetBuilders() ([]ponPoolTypes.Builder, error) {
 }
 
 func (s *PonRegistrySubgraph) GetValidators() ([]ponPoolTypes.Validator, error) {
-	payload := strings.NewReader(BuilderRequest)
+	payload := strings.NewReader(ProposerRequest)
 	req, err := http.NewRequest("POST", s.URL, payload)
 	if err != nil {
 
@@ -47,16 +47,16 @@ func (s *PonRegistrySubgraph) GetValidators() ([]ponPoolTypes.Validator, error) 
 		return nil, err
 	}
 	defer res.Body.Close()
-
 	validatorResponse := new(ponPoolTypes.ValidatorPool)
 	if err := json.NewDecoder(res.Body).Decode(&validatorResponse); err != nil {
 		return nil, err
 	}
+
 	return validatorResponse.Data.Validators, nil
 }
 
 func (s *PonRegistrySubgraph) GetReporters() ([]ponPoolTypes.Reporter, error) {
-	payload := strings.NewReader(ProposerRequest)
+	payload := strings.NewReader(ReporterRequest)
 	req, err := http.NewRequest("POST", s.URL, payload)
 	if err != nil {
 

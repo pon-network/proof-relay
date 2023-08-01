@@ -11,22 +11,24 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	bulletinBoardTypes "github.com/bsn-eng/pon-golang-types/bulletinBoard"
 	databaseTypes "github.com/bsn-eng/pon-golang-types/database"
-	beaconclient "github.com/bsn-eng/pon-wtfpl-relay/beaconinterface"
-	bidBoard "github.com/bsn-eng/pon-wtfpl-relay/bids"
-	"github.com/bsn-eng/pon-wtfpl-relay/bls"
-	"github.com/bsn-eng/pon-wtfpl-relay/bulletinboard"
-	"github.com/bsn-eng/pon-wtfpl-relay/database"
-	ponpool "github.com/bsn-eng/pon-wtfpl-relay/ponPool"
-	"github.com/bsn-eng/pon-wtfpl-relay/reporter"
-	"github.com/bsn-eng/pon-wtfpl-relay/signing"
-	"github.com/bsn-eng/pon-wtfpl-relay/utils"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	newrelic "github.com/newrelic/go-agent/v3/newrelic"
 	"github.com/sirupsen/logrus"
+
+	beaconclient "github.com/pon-pbs/bbRelay/beaconinterface"
+	bidBoard "github.com/pon-pbs/bbRelay/bids"
+	"github.com/pon-pbs/bbRelay/bls"
+	"github.com/pon-pbs/bbRelay/bulletinboard"
+	"github.com/pon-pbs/bbRelay/database"
+	ponpool "github.com/pon-pbs/bbRelay/ponPool"
+	"github.com/pon-pbs/bbRelay/reporter"
+	"github.com/pon-pbs/bbRelay/signing"
+	"github.com/pon-pbs/bbRelay/utils"
 )
 
 var (
-	VersionCapella = "capella"
+	VersionCapella       = "capella"
+	EmptyWithdrawalsRoot = phase0.Root([]byte("0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"))
 )
 
 type Signature phase0.BLSSignature
@@ -77,6 +79,8 @@ type RelayParams struct {
 	DatabaseParams databaseTypes.DatabaseOpts
 	DbDriver       databaseTypes.DatabaseDriver
 
+	URL string
+
 	PonPoolURL    string
 	PonPoolAPIKey string
 
@@ -86,7 +90,7 @@ type RelayParams struct {
 
 	ReporterURL string
 
-	Network EthNetwork
+	Network string
 
 	RedisURI string
 
@@ -120,25 +124,25 @@ type ProposerReqParams struct {
 }
 
 type ExecutionPayload struct {
-	ParentHash    phase0.Hash32              `ssz-size:"32"`
-	FeeRecipient  bellatrix.ExecutionAddress `ssz-size:"20"`
-	StateRoot     [32]byte                   `ssz-size:"32"`
-	ReceiptsRoot  [32]byte                   `ssz-size:"32"`
-	LogsBloom     [256]byte                  `ssz-size:"256"`
-	PrevRandao    [32]byte                   `ssz-size:"32"`
-	BlockNumber   uint64
-	GasLimit      uint64
-	GasUsed       uint64
-	Timestamp     uint64
-	ExtraData     []byte                  `ssz-max:"32"`
-	BaseFeePerGas [32]byte                `ssz-size:"32"`
-	BlockHash     phase0.Hash32           `ssz-size:"32"`
-	Transactions  []bellatrix.Transaction `ssz-max:"1048576,1073741824" ssz-size:"?,?"`
-	Withdrawals   []*capella.Withdrawal   `ssz-max:"16"`
+	ParentHash    phase0.Hash32              `ssz-size:"32" json:"parent_hash"`
+	FeeRecipient  bellatrix.ExecutionAddress `ssz-size:"20" json:"fee_recipient"`
+	StateRoot     [32]byte                   `ssz-size:"32" json:"state_root"`
+	ReceiptsRoot  [32]byte                   `ssz-size:"32" json:"receipts_root"`
+	LogsBloom     [256]byte                  `ssz-size:"256" json:"logs_bloom"`
+	PrevRandao    [32]byte                   `ssz-size:"32" json:"prev_randao"`
+	BlockNumber   uint64                     `json:"block_number"`
+	GasLimit      uint64                     `json:"gas_limit"`
+	GasUsed       uint64                     `json:"gas_used"`
+	Timestamp     uint64                     `json:"timestamp"`
+	ExtraData     []byte                     `ssz-max:"32" json:"extra_data"`
+	BaseFeePerGas [32]byte                   `ssz-size:"32" json:"base_fee_per_gas"`
+	BlockHash     phase0.Hash32              `ssz-size:"32" json:"block_hash"`
+	Transactions  []bellatrix.Transaction    `ssz-max:"1048576,1073741824" ssz-size:"?,?" json:"transactions" json:"withdrawals"`
+	Withdrawals   []*capella.Withdrawal      `ssz-max:"16"`
 }
 
 type ProposerPayload struct {
 	Version   spec.DataVersion
 	Bellatrix *bellatrix.ExecutionPayload
-	Capella   *capella.ExecutionPayload
+	Capella   *ExecutionPayload
 }

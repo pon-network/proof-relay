@@ -7,9 +7,12 @@ import (
 
 	capellaAPI "github.com/attestantio/go-builder-client/api/capella"
 	"github.com/attestantio/go-eth2-client/spec/capella"
-	"github.com/bsn-eng/pon-wtfpl-relay/redisPackage"
+	relayTypes "github.com/bsn-eng/pon-golang-types/relay"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/sirupsen/logrus"
+
+	beaconclient "github.com/pon-pbs/bbRelay/beaconinterface"
+	"github.com/pon-pbs/bbRelay/redisPackage"
 )
 
 var EpochDuration = 12 * 32 * time.Second
@@ -43,10 +46,16 @@ func (p PublicKey) String() string {
 }
 
 type ProposerUtils struct {
-	ValidatorsLast map[string]string
-	Mu             sync.Mutex
 	Log            logrus.Entry
 	RedisInterface *redisPackage.RedisInterface
+	BeaconClient   *beaconclient.MultiBeaconClient
+	Validators     relayTypes.ValidatorIndexes
+	ProposerStatus ProposerUpdates
+}
+
+type ProposerUpdates struct {
+	ValidatorsLast map[string]string
+	Mu             sync.Mutex
 }
 
 type BuilderUtils struct {
@@ -79,4 +88,24 @@ type GetPayloadUtils struct {
 	Data                 *capella.ExecutionPayloadHeader
 	API                  string
 	BuilderWalletAddress string
+}
+
+func chunkSlice(slice []string, chunkSize int) [][]string {
+	var chunks [][]string
+	for {
+		if len(slice) == 0 {
+			break
+		}
+
+		// necessary check to avoid slicing beyond
+		// slice capacity
+		if len(slice) < chunkSize {
+			chunkSize = len(slice)
+		}
+
+		chunks = append(chunks, slice[0:chunkSize])
+		slice = slice[chunkSize:]
+	}
+
+	return chunks
 }

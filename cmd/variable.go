@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"github.com/bsn-eng/pon-wtfpl-relay/bls"
-	"github.com/bsn-eng/pon-wtfpl-relay/constants"
-	"github.com/bsn-eng/pon-wtfpl-relay/relay"
-	"github.com/bsn-eng/pon-wtfpl-relay/signing"
+	"github.com/pon-pbs/bbRelay/bls"
 )
 
 var (
@@ -39,12 +36,12 @@ var (
 )
 
 var (
-	relayDefaultURL              = "localhost:9000"
+	relayDefaultURL              = "localhost:9062"
 	apiDefaultSecretKey          = ""
 	defaultNetwork               = "Ethereum"
 	defaultPostgresURL           = ""
-	defaultRedisURI              = ""
-	defaultBeaconURIs            = []string{"localhost:3500"}
+	defaultRedisURI              = "redis://localhost:6379"
+	defaultBeaconURIs            = []string{"http://localhost:3500"}
 	maxDBConnectionsDefault      = "100"
 	maxIdleConnectionsDefault    = "100"
 	maxTimeConnectionDefault     = "100s"
@@ -66,40 +63,3 @@ var (
 	newRelicLicenseDefault       = ""
 	newRelicForwardingDefault    = true
 )
-
-func NewEthNetworkDetails(network string) (*relay.EthNetwork, error) {
-	if network == "Ethereum" {
-		domainBuilder, err := signing.ComputeDomain(signing.DomainTypeAppBuilder, constants.GenesisForkVersionMainnet, signing.Root{}.String())
-		if err != nil {
-			return nil, err
-		}
-		domainBeaconCapella, err := signing.ComputeDomain(signing.DomainTypeBeaconProposer, constants.CapellaForkVersionMainnet, constants.GenesisValidatorsRootMainnet)
-		if err != nil {
-			return nil, err
-		}
-		return &relay.EthNetwork{
-			Network:             0,
-			GenesisTime:         uint64(constants.GenesisTimeMainnet),
-			DomainBuilder:       domainBuilder,
-			DomainBeaconCapella: domainBeaconCapella,
-		}, nil
-	}
-
-	if network == "Goerli" {
-		domainBuilder, err := signing.ComputeDomain(signing.DomainTypeAppBuilder, constants.GenesisForkVersionGoerli, signing.Root{}.String())
-		if err != nil {
-			return nil, err
-		}
-		domainBeaconCapella, err := signing.ComputeDomain(signing.DomainTypeBeaconProposer, constants.CapellaForkVersionGoerli, constants.GenesisValidatorsRootGoerli)
-		if err != nil {
-			return nil, err
-		}
-		return &relay.EthNetwork{
-			Network:             1,
-			GenesisTime:         uint64(constants.GenesisTimeGoerli),
-			DomainBuilder:       domainBuilder,
-			DomainBeaconCapella: domainBeaconCapella,
-		}, nil
-	}
-	return &relay.EthNetwork{}, nil
-}

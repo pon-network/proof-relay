@@ -3,10 +3,10 @@ package client
 import (
 	"fmt"
 
-	beaconData "github.com/bsn-eng/pon-wtfpl-relay/beaconinterface/data"
-
 	beaconTypes "github.com/bsn-eng/pon-golang-types/beaconclient"
 	"github.com/ethereum/go-ethereum/common"
+
+	beaconData "github.com/pon-pbs/bbRelay/beaconinterface/data"
 )
 
 func (b *beaconClient) GetSlotProposerMap(epoch uint64) (beaconData.SlotProposerMap, error) {
@@ -54,8 +54,25 @@ func (b *beaconClient) GetValidatorList(headSlot uint64) ([]*beaconTypes.Validat
 	if err != nil {
 		return nil, err
 	}
-
 	return validators.Data, nil
+}
+func (b *beaconClient) GetValidatorIndex(validators []string) (ValidatorBeacon, error) {
+
+	u := *b.beaconEndpoint
+	u.Path = "/eth/v1/beacon/states/head/validators"
+	q := u.Query()
+	for _, validatorPubKey := range validators {
+		q.Add("id", validatorPubKey)
+	}
+
+	u.RawQuery = q.Encode()
+	var validatorResponse ValidatorBeacon
+	err := b.fetchBeacon(&u, &validatorResponse)
+	if err != nil {
+		return ValidatorBeacon{}, err
+	}
+
+	return validatorResponse, nil
 }
 
 func (b *beaconClient) Genesis() (*beaconTypes.GenesisData, error) {
@@ -65,6 +82,9 @@ func (b *beaconClient) Genesis() (*beaconTypes.GenesisData, error) {
 
 	u.Path = "/eth/v1/beacon/genesis"
 	err := b.fetchBeacon(&u, &resp)
+	if err != nil {
+		return nil, err
+	}
 	return resp.Data, err
 }
 
@@ -75,6 +95,9 @@ func (b *beaconClient) GetWithdrawals(slot uint64) (*beaconTypes.Withdrawals, er
 
 	u.Path = fmt.Sprintf("/eth/v1/builder/states/%d/expected_withdrawals", slot)
 	err := b.fetchBeacon(&u, &resp)
+	if err != nil {
+		return nil, err
+	}
 	return resp.Data, err
 }
 
@@ -85,7 +108,9 @@ func (b *beaconClient) Randao(slot uint64) (*common.Hash, error) {
 	u.Path = fmt.Sprintf("/eth/v1/beacon/states/%d/randao", slot)
 
 	err := b.fetchBeacon(&u, &resp)
-
+	if err != nil {
+		return nil, err
+	}
 	data := resp.Data
 	return &data.Randao, err
 }
@@ -97,7 +122,9 @@ func (b *beaconClient) GetBlock(slot uint64) (*beaconTypes.SignedBeaconBlock, er
 	u.Path = fmt.Sprintf("/eth/v2/beacon/blocks/%d", slot)
 
 	err := b.fetchBeacon(&u, &resp)
-
+	if err != nil {
+		return nil, err
+	}
 	return resp.Data, err
 }
 
@@ -108,7 +135,9 @@ func (b *beaconClient) GetBlockHeader(slot uint64) (*beaconTypes.BlockHeaderData
 	u.Path = fmt.Sprintf("/eth/v1/beacon/headers/%d", slot)
 
 	err := b.fetchBeacon(&u, &resp)
-
+	if err != nil {
+		return nil, err
+	}
 	return resp.Data, err
 }
 
@@ -119,6 +148,8 @@ func (b *beaconClient) GetCurrentBlockHeader() (*beaconTypes.BlockHeaderData, er
 	u.Path = "/eth/v1/beacon/headers/head"
 
 	err := b.fetchBeacon(&u, &resp)
-
+	if err != nil {
+		return nil, err
+	}
 	return resp.Data, err
 }

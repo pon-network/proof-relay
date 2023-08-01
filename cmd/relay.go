@@ -1,16 +1,18 @@
 package cmd
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
 	bulletinBoardTypes "github.com/bsn-eng/pon-golang-types/bulletinBoard"
 	databaseTypes "github.com/bsn-eng/pon-golang-types/database"
-	"github.com/bsn-eng/pon-wtfpl-relay/bls"
-	"github.com/bsn-eng/pon-wtfpl-relay/relay"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/pon-pbs/bbRelay/bls"
+	"github.com/pon-pbs/bbRelay/relay"
 )
 
 func init() {
@@ -59,20 +61,15 @@ var relayCmd = &cobra.Command{
 			"package": "Relay",
 		})
 
-		network, err := NewEthNetworkDetails(network)
-		if err != nil {
-			log.WithError(err).Fatal("Error Network")
-		}
-
 		if len(beaconNodeURIs) == 0 {
 			log.Fatal("no beacon endpoints specified")
 		}
 
-		if redisURI == " " {
+		if redisURI == "" {
 			log.Fatal("No Redis URL Specified")
 		}
 
-		if postgresURL == " " {
+		if postgresURL == "" {
 			log.Fatal("couldn't read db URL")
 		}
 		maxConnections, _ := strconv.ParseInt(maxDBConnections, 10, 64)
@@ -83,7 +80,7 @@ var relayCmd = &cobra.Command{
 			MaxIdleConnections:    int(maxIdle),
 			MaxIdleTimeConnection: maxTimeIdle,
 		}
-		if ponPoolURL == " " {
+		if ponPoolURL == "" {
 			log.Fatal("couldn't read PON Pool URL")
 		}
 
@@ -125,7 +122,9 @@ var relayCmd = &cobra.Command{
 
 			ReporterURL: reporterURL,
 
-			Network: *network,
+			URL: relayURL,
+
+			Network: network,
 
 			RedisURI: redisURI,
 
@@ -153,7 +152,9 @@ var relayCmd = &cobra.Command{
 			WriteTimeout:      writeTimeoutTime,
 			IdleTimeout:       idleTimeoutTime,
 		}
-		log.Infof("Webserver starting on %s ...", relayURL)
+
+		fmt.Println(pon_painiting)
+		log.Infof("Webserver starting on %s ...", srv.URL)
 		err = srv.StartServer(serverParams)
 		if err != nil {
 			log.WithError(err).Fatal("server error")

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/bsn-eng/pon-wtfpl-relay/cmd"
-	_ "github.com/bsn-eng/pon-wtfpl-relay/docs"
+	"github.com/pon-pbs/bbRelay/cmd"
+	_ "github.com/pon-pbs/bbRelay/docs"
 )
 
 func main() {

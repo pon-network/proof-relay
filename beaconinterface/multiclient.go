@@ -8,10 +8,10 @@ import (
 	"time"
 
 	beaconTypes "github.com/bsn-eng/pon-golang-types/beaconclient"
-	beaconClient "github.com/bsn-eng/pon-wtfpl-relay/beaconinterface/client"
-	beaconData "github.com/bsn-eng/pon-wtfpl-relay/beaconinterface/data"
-
 	"github.com/ethereum/go-ethereum/log"
+
+	beaconClient "github.com/pon-pbs/bbRelay/beaconinterface/client"
+	beaconData "github.com/pon-pbs/bbRelay/beaconinterface/data"
 )
 
 type BeaconClient struct {
@@ -68,7 +68,6 @@ func (b *MultiBeaconClient) Start() {
 		`SubscribeToPayloadAttributesEvents()` functions, respectively. These events are run in separate
 		goroutines to allow for concurrent processing.
 	*/
-
 	log.Info("Waiting for at least one client to be synced")
 	b.waitSynced()
 
@@ -83,6 +82,7 @@ func (b *MultiBeaconClient) Stop() {
 func (b *MultiBeaconClient) waitSynced() {
 	// wait for at least one client to be synced, call the sync status endpoint periodically till one is synced
 	for {
+
 		syncStatus, _ := b.SyncStatus()
 		if syncStatus != nil && !syncStatus.IsSyncing {
 			return
@@ -276,9 +276,9 @@ func (b *MultiBeaconClient) GetCurrentHead() (beaconTypes.HeadEventData, error) 
 	*/
 	b.BeaconData.Mu.Lock()
 	defer b.BeaconData.Mu.Unlock()
-	
+
 	data := b.BeaconData.CurrentHead
-	
+
 	return data, nil
 }
 
@@ -322,20 +322,25 @@ func (b *MultiBeaconClient) GetPayloadAttributesForSlot(requestedSlot uint64) (*
 		if err != nil {
 			return nil, err
 		}
+		if withdrawals == nil {
+			withdrawals = &beaconTypes.Withdrawals{}
+		}
+
+		attrs := beaconTypes.PayloadAttributes{
+			Withdrawals: *withdrawals,
+			PrevRandao:  previousRandao.String(),
+			// Timestamp not needed
+			// Cannot get suggested fee recipient and not needed
+		}
 
 		// Construct the payload attributes
 		payloadAttributes := beaconTypes.PayloadAttributesEventData{
 			ProposerIndex: proposer.Index,
 			ProposalSlot:  requestedSlot,
 			// Parent block number not needed
-			ParentBlockRoot: parentBlockHeader.Header.Message.StateRoot,
-			ParentBlockHash: parentBlockHeader.Root,
-			PayloadAttributes: &beaconTypes.PayloadAttributes{
-				Withdrawals: withdrawals,
-				PrevRandao:  previousRandao.String(),
-				// Timestamp not needed
-				// Cannot get suggested fee recipient and not needed
-			},
+			ParentBlockRoot:   parentBlockHeader.Header.Message.StateRoot,
+			ParentBlockHash:   parentBlockHeader.Root,
+			PayloadAttributes: attrs,
 		}
 
 		b.BeaconData.Mu.Lock()
@@ -359,9 +364,9 @@ func (b *MultiBeaconClient) SyncStatus() (*beaconTypes.SyncStatusData, error) {
 	var foundSyncedNode bool
 
 	var wg sync.WaitGroup
-	for _, instance := range b.Clients {
+	for i, instance := range b.Clients {
 		wg.Add(1)
-		go func(client BeaconClient) {
+		go func(client BeaconClient, index int) {
 			defer wg.Done()
 
 			startTime := time.Now()
@@ -373,6 +378,7 @@ func (b *MultiBeaconClient) SyncStatus() (*beaconTypes.SyncStatusData, error) {
 				client.LastResponseStatus = 500
 				client.LastUsedTime = time.Now()
 				client.NodeSpeed = endTime.Sub(startTime)
+				b.Clients[index] = client
 				b.clientUpdate.Unlock()
 				return
 			}
@@ -382,13 +388,14 @@ func (b *MultiBeaconClient) SyncStatus() (*beaconTypes.SyncStatusData, error) {
 			client.LastUsedTime = time.Now()
 			client.SyncStatus = syncStatus
 			client.NodeSpeed = endTime.Sub(startTime)
+			b.Clients[index] = client
 			b.clientUpdate.Unlock()
 
 			if !syncStatus.IsSyncing && !foundSyncedNode {
 				foundSyncedNode = true
 			}
 
-		}(instance)
+		}(instance, i)
 	}
 
 	wg.Wait()
@@ -398,7 +405,6 @@ func (b *MultiBeaconClient) SyncStatus() (*beaconTypes.SyncStatusData, error) {
 	// Since this is the only function that is always called asynchronously, we can use it as the main performance updater
 	// This is the point that node speed is updated, as it is the only functino that has a uniform payload/response across all nodes
 	b.updateClientPerformance()
-
 	if b.Clients[0].SyncStatus == nil {
 		return nil, errors.New("all beacon nodes failed")
 	}

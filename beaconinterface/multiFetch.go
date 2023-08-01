@@ -2,13 +2,16 @@ package beaconinterface
 
 import (
 	"errors"
+	"fmt"
+	"strconv"
 	"time"
 
 	beaconTypes "github.com/bsn-eng/pon-golang-types/beaconclient"
-	beaconData "github.com/bsn-eng/pon-wtfpl-relay/beaconinterface/data"
-
+	relayTypes "github.com/bsn-eng/pon-golang-types/relay"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
+	beaconData "github.com/pon-pbs/bbRelay/beaconinterface/data"
 )
 
 func (b *MultiBeaconClient) GetValidatorList(slot uint64) ([]*beaconTypes.ValidatorData, error) {
@@ -21,7 +24,6 @@ func (b *MultiBeaconClient) GetValidatorList(slot uint64) ([]*beaconTypes.Valida
 	defer b.postBeaconCall()
 
 	for _, client := range b.Clients {
-
 		validatorList, err := client.Node.GetValidatorList(slot)
 		if err != nil {
 			log.Error("failed to get validator list", "err", err, "endpoint", client.Node.BaseEndpoint())
@@ -149,7 +151,8 @@ func (b *MultiBeaconClient) Randao(slot uint64) (randao *common.Hash, err error)
 
 	defer b.postBeaconCall()
 	for _, client := range b.Clients {
-		if randao, err = client.Node.Randao(slot); err != nil {
+		randao, err = client.Node.Randao(slot)
+		if err != nil {
 			log.Warn("failed to get randao", "err", err, "endpoint", client.Node.BaseEndpoint())
 			b.clientUpdate.Lock()
 			client.LastResponseStatus = 500
@@ -157,7 +160,6 @@ func (b *MultiBeaconClient) Randao(slot uint64) (randao *common.Hash, err error)
 			b.clientUpdate.Unlock()
 			continue
 		}
-
 		b.clientUpdate.Lock()
 		client.LastResponseStatus = 200
 		client.LastUsedTime = time.Now()
@@ -254,4 +256,39 @@ func (b *MultiBeaconClient) GetCurrentBlockHeader() (blockHeader *beaconTypes.Bl
 	}
 
 	return nil, err
+}
+
+func (b *MultiBeaconClient) GetValidatorIndex(newValidators []string, validatorIndexes *relayTypes.ValidatorIndexes) {
+	/*
+		Get Validator Public Key.
+		If any client fails, try the next one.
+		Clients are attempted by best performance first.
+		Performance is also updated in defer function (triggers background update).
+	*/
+	defer b.postBeaconCall()
+
+	for _, client := range b.Clients {
+		validators, err := client.Node.GetValidatorIndex(newValidators)
+		if err != nil {
+			log.Warn("failed to get current block header", "err", err, "endpoint", client.Node.BaseEndpoint())
+			b.clientUpdate.Lock()
+			client.LastResponseStatus = 500
+			client.LastUsedTime = time.Now()
+			b.clientUpdate.Unlock()
+			continue
+		}
+
+		b.clientUpdate.Lock()
+		client.LastResponseStatus = 200
+		client.LastUsedTime = time.Now()
+		b.clientUpdate.Unlock()
+		validatorIndexes.Mu.Lock()
+		for _, validator := range validators.Data {
+			validatorIndex, _ := strconv.ParseInt(validator.Index, 10, 64)
+			validatorIndexes.ValidatorPubkeyIndex[fmt.Sprintf("%v", validator.Validator["pubkey"])] = uint64(validatorIndex)
+			validatorIndexes.ValidatorIndexPubkey[uint64(validatorIndex)] = fmt.Sprintf("%v", validator.Validator["pubkey"])
+		}
+		validatorIndexes.Mu.Unlock()
+		break
+	}
 }

@@ -1,6 +1,6 @@
 # Welcome To Proof Of Neutrality Relay
 
-The Proof of Neutrality Relay (PoN) is a decentralized, permissionless, and neutral middleware run by validators to participate in the market for block-building and exchange. The PoN relay was built by Blockswap Labs as a solution implementing the Proposer-Builder Separation theory (PBS) put forward by Vitalik Buterin.
+The Proof of Neutrality Relay (PoN) is a decentralized, permissionless, and neutral middleware run by validators to participate in the market for block-building and exchange. The PoN relay was built by Blockswap Labs as a solution implementing in protocol Proposer-Builder Separation theory (PBS).
 
 [![Relay Documentation](
 https://camo.githubusercontent.com/915b7be44ada53c290eb157634330494ebe3e30a/68747470733a2f2f676f646f632e6f72672f6769746875622e636f6d2f676f6c616e672f6764646f3f7374617475732e737667
@@ -21,6 +21,28 @@ In the Ethereum Proof-of-Stake (PoS) system, node operators use three essential 
 Block-builders create full blocks aiming for the optimal MEV extraction and equitable distribution of rewards. Once they are done, the blocks are sent to relays. The PoN relay selects the most profitable block received from various builders, submits it to the block proposer, and the consensus client then sends it to the Ethereum network for verification and block inclusion.
 
 Reporters are a novel addition and essential for a decentralized infrastructure to run smoothly. In the PoN relay, reporters monitor the actions of builders and proposers to ensure that there is no malicious behavior or wrongdoing. If a violation occurs, the reporter can submit a report and earn ETH for securing the protocol.
+
+## Goals Of PON Relay
+* **Bid Neutrality**- PoN Network and in hinsight, PoN relay at no point has access to the block transactions being built by the relay. This way the builder is alyways secure from the relay. There are rules and monitoring stack governed by the Restrictive Partially Blind Scheme which ensure no party including the PoN relay is ever cheated by any other PoN component.
+* **Performance**- PoN Relay uses post epoch validation which makes the need for relay level block simulation redundant. By removing block validation, the performance is increased much more which translates into more MEV available monteraly for the builders.
+* **Transparency**- PoN Relay implements out of the box data APIs while also allowing for easy setup of external services like Metabase for data transparency. Anyone can run reporter with PoN relay and maintain transparency of the bids being submitted to PoN Relay and ones being proposed.
+* **Support For Extensive Block Building**- PoN Relay uses bulletin board (A MQTT Bases Pub Sub) and its two bids Auction to help the builders build best blocks. Bulletin Board provides a low resource intensive solution for the builders to get updated bids from and based on the updating auction scenerio builders can update the bids.
+
+## Architecture
+While PoN maintains the Proposer Builder Separation, currently widely being used in MEV supply chain, it also does some changes which help in achieving neutrality at the relay level.
+
+![](./relay.png)
+
+
+### Easy Install
+
+Install latest release from [pon-bbrelay](https://github.com/pon-pbs/bbRelay/releases)
+
+Install and run using-
+```shell
+$ go install github.com/pon-pbs/bbrelay
+$ bbrelay --help
+```
 
 ## Setting Up PON Network
 
@@ -43,7 +65,7 @@ https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docke
 - Download The Docker at [Docker Hub](https://hub.docker.com/repository/docker/blockswap/reporter/general)
 - Build using ```docker run -dp 3000:3000 blockswap/reporter```
 
-    ```Note- The reporter is under development so aloways use the latest version of reporter```
+    ```Note - The reporter is under development so always use the latest version of reporter```
 
 ## Building Relay
 
@@ -64,6 +86,7 @@ https://img.shields.io/badge/Documentation-Docusaurus-green)](https://docs.pon.n
 To run from source use the main branch of this repository and use the following command-
 
 ```shell
+go migrate
 go run . relay \
 --relay-url <Relay_URL> \
 --beacon-uris <Beacon_URIS> \
@@ -120,7 +143,7 @@ PON Relay comes with a metabase docker-compose file. It can be used by following
 | `--pon-pool` | Pon Pool Subgraph URL | `""` | Yes |
 | `--bulletinBoard-broker` | Bulletin Board MQTT Broker URL | `""` | Yes |
 | `--bulletinBoard-port` | Bulletin Board MQTT Port | `""` | Yes |
-| `--bulletinBoard-client` | Bulletin Board Client | `""` | Yes |
+| `--bulletinBoard-client` | Bulletin Board Client | `""` | Yes |̦
 | `--bulletinBoard-password` | Bulletin Board Password | `""` | Yes |
 | `--bid-timeout` | Maximum Time Bid Is Kept With Relay `(In 1s/ 5h format)` | `"15s"` | No |
 | `--relay-read-timeout` | Relay Server Read Timeout `(In 1s/ 5h format)` | `"10s"` | No |

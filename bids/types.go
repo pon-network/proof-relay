@@ -3,9 +3,10 @@ package bids
 import (
 	"time"
 
-	"github.com/bsn-eng/pon-wtfpl-relay/bulletinboard"
-	"github.com/bsn-eng/pon-wtfpl-relay/redisPackage"
 	"github.com/sirupsen/logrus"
+
+	"github.com/pon-pbs/bbRelay/bulletinboard"
+	"github.com/pon-pbs/bbRelay/redisPackage"
 )
 
 var (
@@ -18,6 +19,7 @@ var (
 
 var (
 	slotProposerDeliveredKey = "slot-proposer-payload-delivered"
+	slotBountyBidWinnerKey   = "slot-bounty-bid-winner"
 )
 
 type BidBoard struct {

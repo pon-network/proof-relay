@@ -27,9 +27,9 @@ func (database *DatabaseInterface) NewDatabaseOpts() {
 }
 
 func (database *DatabaseInterface) DBMigrate() error {
-	migrationOpts, err := iofs.New(databaseTypes.Content, "migrations/*.sql")
+	migrationOpts, err := iofs.New(databaseTypes.Content, "migrations/")
 	if err != nil {
-		database.Log.Fatal(err)
+		database.Log.Error(err)
 		return err
 	}
 

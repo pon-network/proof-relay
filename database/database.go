@@ -6,10 +6,9 @@ import (
 	"database/sql"
 	"encoding/json"
 
-	_ "github.com/lib/pq"
-
 	databaseTypes "github.com/bsn-eng/pon-golang-types/database"
 	ponPoolTypes "github.com/bsn-eng/pon-golang-types/ponPool"
+	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 )
 
@@ -38,12 +37,6 @@ func NewDatabase(url string,
 		"Max Timeout":          parameters.MaxIdleTimeConnection,
 	}).Info("Database Opts")
 
-	err = dbInterface.DBMigrate()
-	if err != nil {
-		logrus.WithError(err).Fatalf("Error In Migrate")
-		return nil, err
-	}
-
 	return dbInterface, err
 }
 
@@ -63,6 +56,7 @@ func (database *DatabaseInterface) PutValidatorDeliveredPayload(ctx context.Cont
 		query,
 		validatorPayload.Slot,
 		validatorPayload.ProposerPubkey,
+		validatorPayload.BlockHash,
 		payloadJSON,
 	)
 
@@ -78,7 +72,7 @@ func (database *DatabaseInterface) PutValidatorReturnedBlock(ctx context.Context
 	_, err = database.DB.ExecContext(
 		ctx,
 		query,
-		returnedBlock.Signature,
+		returnedBlock.Signature[:48],
 		returnedBlock.Slot,
 		returnedBlock.BlockHash,
 		returnedBlock.ProposerPubkey,
@@ -99,7 +93,7 @@ func (database *DatabaseInterface) PutValidatorDeliveredHeader(ctx context.Conte
 		validatorDeliveredHeader.Slot,
 		validatorDeliveredHeader.ProposerPubkey,
 		validatorDeliveredHeader.BlockHash,
-		validatorDeliveredHeader.Value,
+		validatorDeliveredHeader.Value.Uint64(),
 	)
 
 	return err
@@ -107,18 +101,21 @@ func (database *DatabaseInterface) PutValidatorDeliveredHeader(ctx context.Conte
 
 func (database *DatabaseInterface) PutBuilderBlockSubmission(ctx context.Context,
 	builderSubmission databaseTypes.BuilderBlockDatabase) error {
-
+	rpbs, err := json.Marshal(builderSubmission.RPBS)
+	if err != nil {
+		return err
+	}
 	query := `INSERT INTO builder_block_submissions
 		(id, slot, builder_pubkey, builder_signature, rpbs, transaction_byte) VALUES
-		($1, $2, $3, $4, $5)`
-	_, err := database.DB.ExecContext(
+		($1, $2, $3, $4, $5, $6)`
+	_, err = database.DB.ExecContext(
 		ctx,
 		query,
-		builderSubmission.Hash(),
+		builderSubmission.Hash()[:32],
 		builderSubmission.Slot,
 		builderSubmission.BuilderPubkey,
-		builderSubmission.BuilderSignature,
-		builderSubmission.RPBS,
+		builderSubmission.BuilderSignature[:48],
+		string(rpbs),
 		builderSubmission.TransactionByte,
 	)
 
@@ -149,7 +146,7 @@ func (database *DatabaseInterface) PutReporters(reporters []ponPoolTypes.Reporte
 
 func (database *DatabaseInterface) PutBuilders(builders []ponPoolTypes.Builder) error {
 
-	query := `INSERT INTO builders
+	query := `INSERT INTO block_builders
 		(builder_pubkey, status) VALUES ($1, $2) 
 		ON CONFLICT (builder_pubkey) DO UPDATE SET
 		status = $2`

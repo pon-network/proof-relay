@@ -4,8 +4,9 @@ import (
 	"context"
 
 	beaconTypes "github.com/bsn-eng/pon-golang-types/beaconclient"
-	beaconData "github.com/bsn-eng/pon-wtfpl-relay/beaconinterface/data"
 	"github.com/ethereum/go-ethereum/common"
+
+	beaconData "github.com/pon-pbs/bbRelay/beaconinterface/data"
 )
 
 type BeaconClientInstance interface {
@@ -15,6 +16,7 @@ type BeaconClientInstance interface {
 	GetSlotProposerMap(uint64) (beaconData.SlotProposerMap, error)
 	SyncStatus() (*beaconTypes.SyncStatusData, error)
 	GetValidatorList(uint64) ([]*beaconTypes.ValidatorData, error)
+	GetValidatorIndex([]string) (ValidatorBeacon, error)
 	Genesis() (*beaconTypes.GenesisData, error)
 	GetWithdrawals(uint64) (*beaconTypes.Withdrawals, error)
 	Randao(uint64) (*common.Hash, error)

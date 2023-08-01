@@ -25,13 +25,12 @@ func (b *beaconClient) SubscribeToHeadEvents(ctx context.Context, headChannel ch
 		client := sse.NewClient(fmt.Sprintf("%s/eth/v1/events?topics=head", b.beaconEndpoint.String()))
 		// Use sse client to subscribe to events
 		err := client.SubscribeRawWithContext(ctx, func(msg *sse.Event) {
-			var event beaconTypes.HeadEvent
+			var event beaconTypes.HeadEventData
 			if err := json.Unmarshal(msg.Data, &event); err != nil {
-				log.Warn("event subscription failed")
+				log.Warn("head event subscription failed", "error", err)
 				return
 			}
-			headChannel <- *event.Data
-
+			headChannel <- event
 		})
 
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -39,7 +38,7 @@ func (b *beaconClient) SubscribeToHeadEvents(ctx context.Context, headChannel ch
 		}
 
 		if err != nil {
-			log.Error("failed to subscribe to payload_attributes events")
+			log.Error("failed to subscribe to head events")
 			time.Sleep(1 * time.Second)
 		}
 
@@ -59,10 +58,10 @@ func (b *beaconClient) SubscribeToPayloadAttributesEvents(ctx context.Context, p
 	for {
 		client := sse.NewClient(fmt.Sprintf("%s/eth/v1/events?topics=payload_attributes", b.beaconEndpoint.String()))
 		// Use sse client to subscribe to events
-		err := client.SubscribeRawWithContext(ctx,func(msg *sse.Event) {
+		err := client.SubscribeRawWithContext(ctx, func(msg *sse.Event) {
 			var event beaconTypes.PayloadAttributesEvent
 			if err := json.Unmarshal(msg.Data, &event); err != nil {
-				log.Warn("event subscription failed")
+				log.Warn("payload event subscription failed", "error", err)
 				return
 			}
 			payloadAttributesC <- *event.Data

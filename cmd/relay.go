@@ -36,6 +36,7 @@ func init() {
 	relayCmd.Flags().StringVar(&bulletinBoardBroker, "bulletinBoard-broker", bulletinBoardBrokerDefault, "Bulletin Board Broker URL")
 	relayCmd.Flags().StringVar(&bulletinBoardPort, "bulletinBoard-port", bulletinBoardPortDefault, "Bulletin Board Port")
 	relayCmd.Flags().StringVar(&bulletinBoardClient, "bulletinBoard-client", bulletinBoardClientDefault, "Pon Pool URL")
+	relayCmd.Flags().StringVar(&bulletinBoardUserName, "bulletinBoard-username", bulletinBoardUsernameDefault, "Pon Pool URL")
 	relayCmd.Flags().StringVar(&bulletinBoardPassword, "bulletinBoard-password", bulletinBoardPasswordDefault, "Pon Pool URL")
 
 	relayCmd.Flags().StringVar(&reporterURL, "reporter-url", reporterURLDefault, "Reporter Server URL")
@@ -46,10 +47,6 @@ func init() {
 	relayCmd.Flags().StringVar(&readHeaderTimeout, "relay-read-header-timeout", readHeaderTimeoutDefault, "Relay Read Header Timeout")
 	relayCmd.Flags().StringVar(&writeTimeout, "relay-write-timeout", writeTimeoutDefault, "Relay Write Timeout")
 	relayCmd.Flags().StringVar(&idleTimeout, "relay-idle-timeout", idleTimeoutDefault, "Relay Idle Timeout")
-
-	relayCmd.Flags().StringVar(&newRelicApp, "new-relic-application", newRelicAppDefault, "New Relic Application")
-	relayCmd.Flags().StringVar(&newRelicLicense, "new-relic-license", newRelicLicenseDefault, "New Relic License")
-	relayCmd.Flags().BoolVar(&newRelicForwarding, "new-relic-forwarding", newRelicForwardingDefault, "New Relic Forwarding")
 
 }
 
@@ -131,10 +128,6 @@ var relayCmd = &cobra.Command{
 			BidTimeOut: bid,
 
 			Sk: secretKey,
-
-			NewRelicApp:        newRelicApp,
-			NewRelicLicense:    newRelicLicense,
-			NewRelicForwarding: newRelicForwarding,
 		}
 
 		srv, err := relay.NewRelayAPI(opts, log)

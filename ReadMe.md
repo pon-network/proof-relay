@@ -58,12 +58,12 @@ https://camo.githubusercontent.com/915b7be44ada53c290eb157634330494ebe3e30a/6874
 
 #### Reporter
 
-[![Builder Repository](
+[![Reporter Repository](
 https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white
-)](https://github.com/pon-pbs/bbBuilder)
+)](https://github.com/pon-pbs/pon-reporter)
 
-- Download The Docker at [Docker Hub](https://hub.docker.com/repository/docker/blockswap/reporter/general)
-- Build using ```docker run -dp 3000:3000 blockswap/reporter```
+- Docker coming soon
+- Visit [Reporter Repository](https://github.com/pon-pbs/pon-reporter)
 
     ```Note - The reporter is under development so always use the latest version of reporter```
 

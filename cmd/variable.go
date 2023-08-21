@@ -30,9 +30,6 @@ var (
 	readHeaderTimeout     string
 	writeTimeout          string
 	idleTimeout           string
-	newRelicApp           string
-	newRelicLicense       string
-	newRelicForwarding    bool
 )
 
 var (
@@ -53,13 +50,11 @@ var (
 	bulletinBoardClientDefault   = ""
 	bulletinBoardUserNameDefault = ""
 	bulletinBoardPasswordDefault = ""
+	bulletinBoardUsernameDefault = ""
 	reporterURLDefault           = "localhost:9001"
 	bidTimeoutDefault            = "15s"
 	readTimeoutDefault           = "10s"
 	readHeaderTimeoutDefault     = "10s"
 	writeTimeoutDefault          = "10s"
 	idleTimeoutDefault           = "10s"
-	newRelicAppDefault           = ""
-	newRelicLicenseDefault       = ""
-	newRelicForwardingDefault    = true
 )

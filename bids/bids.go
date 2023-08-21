@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
+	"sync"
 	"time"
 
 	bulletinBoardTypes "github.com/bsn-eng/pon-golang-types/bulletinBoard"
@@ -25,6 +27,7 @@ func NewBidBoard(redis redisPackage.RedisInterface, bulletin bulletinboard.Relay
 		log: logrus.NewEntry(logrus.New()).WithFields(logrus.Fields{
 			"package": "Bid",
 		}),
+		bidMutex: sync.Mutex{},
 	}
 }
 
@@ -122,8 +125,7 @@ func (b *BidBoard) PayloadUtils(slot uint64, blockhash string) (utils.GetPayload
 	return *utilsRelay, err
 }
 
-func (b *BidBoard) AuctionBid(slot uint64) (builder string, value uint64, err error) {
-
+func (b *BidBoard) AuctionBid(slot uint64) (builder string, value big.Int, err error) {
 	b.log.WithFields(logrus.Fields{
 		"slot": slot,
 	}).Info("Auction Requested By Relay")
@@ -131,33 +133,40 @@ func (b *BidBoard) AuctionBid(slot uint64) (builder string, value uint64, err er
 	bidValueKey := fmt.Sprintf("%s-%d", builderValueKeyBid, slot)
 	bidValues, err := b.redisInterface.Client.HGetAll(context.Background(), bidValueKey).Result()
 	if err != nil {
-		return "", 0, err
+		return "", *big.NewInt(0), err
 	}
 
-	topBidValue := uint64(0)
+	topBidValue := big.NewInt(0)
 	topBidBuilderPubkey := ""
+
 	for builderPubkey, bidValue := range bidValues {
-		bidValueInt, _ := strconv.ParseInt(bidValue, 10, 64)
-		if uint64(bidValueInt) > topBidValue {
-			topBidValue = uint64(bidValueInt)
+		bidValueInt := new(big.Int)
+		bidValueInt, ok := bidValueInt.SetString(bidValue, 10)
+		if !ok {
+			b.log.Errorf("Couldn't set bid value %s to int", bidValue)
+			return
+		}
+
+		if bidValueInt.Cmp(topBidValue) > 0 {
+			topBidValue = bidValueInt
 			topBidBuilderPubkey = builderPubkey
 		}
 	}
 
 	if topBidBuilderPubkey == "" {
-		return "", 0, errors.New(fmt.Sprintf("No Bids For Slot %d, Auction Not Possible For Slot", slot))
+		return "", *big.NewInt(0), errors.New(fmt.Sprintf("No Bids For Slot %d, Auction Not Possible For Slot", slot))
 	}
 
 	bidKey := fmt.Sprintf("%s-%d", builderKeyBid, slot)
 	bidStr, err := b.redisInterface.Client.HGet(context.Background(), bidKey, topBidBuilderPubkey).Result()
 	if err != nil {
-		return "", 0, err
+		return "", *big.NewInt(0), err
 	}
 
 	bidHighestKey := fmt.Sprintf("%s-%d", builderHighestKeyBid, slot)
 	err = b.redisInterface.Client.Set(context.Background(), bidHighestKey, bidStr, b.bidTimeout).Err()
 	if err != nil {
-		return "", 0, err
+		return "", *big.NewInt(0), err
 	}
 
 	highestBid := bulletinBoardTypes.RelayHighestBid{
@@ -167,7 +176,7 @@ func (b *BidBoard) AuctionBid(slot uint64) (builder string, value uint64, err er
 	}
 	b.bulletinBoard.Channel.HighestBidChannel <- highestBid
 
-	return topBidBuilderPubkey, topBidValue, nil
+	return topBidBuilderPubkey, *topBidValue, nil
 }
 
 func (b *BidBoard) WinningBid(slot uint64) (*utils.ProposerHeaderResponse, error) {
@@ -240,18 +249,18 @@ func (b *BidBoard) GetBountyBidForSlot(slot uint64) (builder string, err error) 
 }
 
 // @dev Gives highest bid for open bidding
-func (b *BidBoard) GetOpenAuctionHighestBid(slot uint64) (value uint64, err error) {
+func (b *BidBoard) GetOpenAuctionHighestBid(slot uint64) (value *big.Int, err error) {
 
 	winningBid, err := b.WinningBid(slot)
 	if err != nil {
 		/// @dev If no bid is available, send 0
 		if err == redis.Nil {
-			return 0, nil
+			return big.NewInt(0), nil
 		} else {
-			return 0, err
+			return big.NewInt(0), err
 		}
 	}
-	return winningBid.Bid.Data.Message.Value.Uint64(), nil
+	return winningBid.Bid.Data.Message.Value.ToBig(), nil
 }
 
 // @dev Sets The Bounty Bid Winner
@@ -284,11 +293,11 @@ func (b *BidBoard) SetBountyBidForSlot(slot uint64, builder string) (bountyBidWi
 		"builder": builder,
 	}).Info("Bounty Bid Won")
 
-	bountyBid := bulletinBoardTypes.BountyBidWon{
-		Slot:    slot,
-		Builder: builder,
-	}
-	b.bulletinBoard.Channel.BountyBidChannel <- bountyBid
+	// bountyBid := bulletinBoardTypes.BountyBidWon{
+	// 	Slot:    slot,
+	// 	Builder: builder,
+	// }
+	// b.bulletinBoard.Channel.BountyBidChannel <- bountyBid
 
 	return true, nil
 }

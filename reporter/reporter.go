@@ -5,8 +5,9 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/pon-pbs/bbRelay/database"
 	"github.com/sirupsen/logrus"
+
+	"github.com/pon-pbs/bbRelay/database"
 )
 
 type ReporterServer struct {
@@ -29,6 +30,7 @@ func NewReporterServer(URL string, DB *database.DatabaseInterface) *ReporterServ
 func (reporter *ReporterServer) Routes() http.Handler {
 	r := mux.NewRouter()
 
+	r.HandleFunc("/", reporter.handleLanding).Methods(http.MethodGet)
 	r.HandleFunc("/reporter/blocksubmissions", reporter.handleGetBlockSubmissionsReporter).Methods(http.MethodPost)
 	r.HandleFunc("/reporter/payloaddelivered", reporter.handleGetHeaderDeliveredReporter).Methods(http.MethodPost)
 	r.HandleFunc("/reporter/proposerblindedblocks", reporter.handleBlindedBeaconBlockReporter).Methods(http.MethodPost)
@@ -64,6 +66,10 @@ func (reporter *ReporterServer) RespondOK(w http.ResponseWriter, response any) {
 		reporter.log.WithField("response", response).WithError(err).Error("Couldn't write OK response")
 		http.Error(w, "", http.StatusInternalServerError)
 	}
+}
+
+func (reporter *ReporterServer) handleLanding(w http.ResponseWriter, req *http.Request) {
+	reporter.RespondOK(w, "PON Relay Reporter")
 }
 
 func (reporter *ReporterServer) handleGetBlockSubmissionsReporter(w http.ResponseWriter, req *http.Request) {

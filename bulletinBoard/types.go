@@ -1,11 +1,17 @@
 package bulletinboard
 
 import (
+	"time"
+
 	bulletinBoardTypes "github.com/bsn-eng/pon-golang-types/bulletinBoard"
 	pahoMQTT "github.com/eclipse/paho.mqtt.golang"
 	"github.com/sirupsen/logrus"
 
 	beaconclient "github.com/pon-pbs/bbRelay/beaconinterface"
+)
+
+var (
+	mqttTimeout = time.Millisecond
 )
 
 var (

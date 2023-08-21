@@ -16,13 +16,13 @@ func (relayClient *RelayMQTT) HighestBidPublish() {
 
 			err := relayClient.publishBulletinBoard(HighestBidTopic, publishBid)
 			if err != nil {
-				relayClient.Log.WithError(err).Fatalf("Couldn't Update Bid For Proposer %s, Slot %d", bid.BuilderPublicKey, bid.Slot)
+				relayClient.Log.WithError(err).Errorf("Couldn't Update Bid For Proposer %s, Slot %d", bid.BuilderPublicKey, bid.Slot)
+			} else {
+				relayClient.Log.WithFields(logrus.Fields{
+					"slot":  bid.Slot,
+					"value": bid.Amount,
+				}).Info("Highest Bid Published")
 			}
-
-			relayClient.Log.WithFields(logrus.Fields{
-				"slot":  bid.Slot,
-				"value": bid.Amount,
-			}).Info("Highest Bid Published")
 		}
 	}
 }
@@ -37,13 +37,13 @@ func (relayClient *RelayMQTT) SlotHeaderRequested() {
 
 			err := relayClient.publishBulletinBoard(ProposerRequestTopic, proposerRequest)
 			if err != nil {
-				relayClient.Log.WithError(err).Fatalf("Couldn't Update Proposer Request For Proposer %s, Slot %d", slot.Proposer, slot.Slot)
+				relayClient.Log.WithError(err).Errorf("Couldn't Update Proposer Request For Proposer %s, Slot %d", slot.Proposer, slot.Slot)
+			} else {
+				relayClient.Log.WithFields(logrus.Fields{
+					"slot":     slot.Slot,
+					"proposer": slot.Proposer,
+				}).Info("Proposer Slot Request")
 			}
-
-			relayClient.Log.WithFields(logrus.Fields{
-				"slot":     slot.Slot,
-				"proposer": slot.Proposer,
-			}).Info("Proposer Slot Request")
 		}
 	}
 }
@@ -58,13 +58,13 @@ func (relayClient *RelayMQTT) SlotPayloadRequested() {
 
 			err := relayClient.publishBulletinBoard(ProposerPayloadRequestTopic, proposerRequest)
 			if err != nil {
-				relayClient.Log.WithError(err).Fatalf("Couldn't Update Proposer Request For Proposer %s, Slot %d", slot.Proposer, slot.Slot)
+				relayClient.Log.WithError(err).Errorf("Couldn't Update Proposer Request For Proposer %s, Slot %d", slot.Proposer, slot.Slot)
+			} else {
+				relayClient.Log.WithFields(logrus.Fields{
+					"slot":     slot.Slot,
+					"proposer": slot.Proposer,
+				}).Info("Slot Payload Requested")
 			}
-
-			relayClient.Log.WithFields(logrus.Fields{
-				"slot":     slot.Slot,
-				"proposer": slot.Proposer,
-			}).Info("Slot Payload Requested")
 		}
 	}
 }
@@ -79,13 +79,13 @@ func (relayClient *RelayMQTT) BountyBidWon() {
 
 			err := relayClient.publishBulletinBoard(BountyBidTopic, builderBountyBid)
 			if err != nil {
-				relayClient.Log.WithError(err).Fatalf("Couldn't Update Bounty Bid For Builder %s, Slot %d", slot.Builder, slot.Slot)
+				relayClient.Log.WithError(err).Errorf("Couldn't Update Bounty Bid For Builder %s, Slot %d", slot.Builder, slot.Slot)
+			} else {
+				relayClient.Log.WithFields(logrus.Fields{
+					"slot":    slot.Slot,
+					"builder": slot.Builder,
+				}).Info("Bounty Bid Won")
 			}
-
-			relayClient.Log.WithFields(logrus.Fields{
-				"slot":    slot.Slot,
-				"builder": slot.Builder,
-			}).Info("Bounty Bid Won")
 		}
 	}
 }

@@ -85,7 +85,7 @@ func (database *DatabaseInterface) PutValidatorDeliveredHeader(ctx context.Conte
 	validatorDeliveredHeader databaseTypes.ValidatorDeliveredHeaderDatabase) error {
 
 	query := `INSERT INTO validator_header_delivered
-		(slot, proposer_pubkey, block_hash, value) VALUES
+		(slot, proposer_pubkey, block_hash, bid_value) VALUES
 		($1, $2, $3, $4)`
 	_, err := database.DB.ExecContext(
 		ctx,
@@ -93,7 +93,7 @@ func (database *DatabaseInterface) PutValidatorDeliveredHeader(ctx context.Conte
 		validatorDeliveredHeader.Slot,
 		validatorDeliveredHeader.ProposerPubkey,
 		validatorDeliveredHeader.BlockHash,
-		validatorDeliveredHeader.Value.Uint64(),
+		validatorDeliveredHeader.BidValue,
 	)
 
 	return err
@@ -101,21 +101,21 @@ func (database *DatabaseInterface) PutValidatorDeliveredHeader(ctx context.Conte
 
 func (database *DatabaseInterface) PutBuilderBlockSubmission(ctx context.Context,
 	builderSubmission databaseTypes.BuilderBlockDatabase) error {
-	rpbs, err := json.Marshal(builderSubmission.RPBS)
-	if err != nil {
-		return err
-	}
+
 	query := `INSERT INTO builder_block_submissions
-		(id, slot, builder_pubkey, builder_signature, rpbs, transaction_byte) VALUES
-		($1, $2, $3, $4, $5, $6)`
-	_, err = database.DB.ExecContext(
+		(id, slot, builder_pubkey, bid_value, builder_signature, block_hash, rpbs, rpbs_public_key, transaction_byte) VALUES
+		($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+	_, err := database.DB.ExecContext(
 		ctx,
 		query,
 		builderSubmission.Hash()[:32],
 		builderSubmission.Slot,
 		builderSubmission.BuilderPubkey,
-		builderSubmission.BuilderSignature[:48],
-		string(rpbs),
+		builderSubmission.BidValue.String(),
+		builderSubmission.BuilderSignature,
+		builderSubmission.BuilderBidHash,
+		builderSubmission.RPBS,
+		builderSubmission.RpbsPublicKey,
 		builderSubmission.TransactionByte,
 	)
 
@@ -193,7 +193,7 @@ func (database *DatabaseInterface) GetBuilderBlocksReporter(ctx context.Context,
 	slotFrom uint64,
 	slotTo uint64) (*[]databaseTypes.BuilderBlockDatabase, error) {
 
-	query := `SELECT slot, builder_pubkey, builder_signature, rpbs, transaction_byte
+	query := `SELECT slot, builder_pubkey, block_hash, builder_signature, rpbs, rpbs_public_key, transaction_byte, bid_value
 	FROM builder_block_submissions
 	WHERE slot BETWEEN $1 AND $2
 	ORDER BY slot ASC`
@@ -217,10 +217,12 @@ func (database *DatabaseInterface) GetBuilderBlocksReporter(ctx context.Context,
 
 	for rows.Next() {
 		builder := databaseTypes.BuilderBlockDatabase{}
-		err = rows.Scan(&builder.Slot, &builder.BuilderPubkey, &builder.BuilderSignature, &builder.RPBS, &builder.TransactionByte)
+		var bidValueString string
+		err = rows.Scan(&builder.Slot, &builder.BuilderPubkey, &builder.BuilderBidHash, &builder.BuilderSignature, &builder.RPBS, &builder.RpbsPublicKey, &builder.TransactionByte, &bidValueString)
 		if err != nil {
 			return nil, err
 		}
+		builder.BidValue.SetString(bidValueString, 10)
 		blockBuilders = append(blockBuilders, builder)
 	}
 
@@ -231,7 +233,7 @@ func (database *DatabaseInterface) GetValidatorDeliveredHeaderReporter(ctx conte
 	slotFrom uint64,
 	slotTo uint64) (*[]databaseTypes.ValidatorDeliveredHeaderDatabase, error) {
 
-	query := `SELECT slot, proposer_pubkey, block_hash, value
+	query := `SELECT slot, proposer_pubkey, block_hash, bid_value
 	FROM validator_header_delivered
 	WHERE slot BETWEEN $1 AND $2
 	ORDER BY slot ASC`
@@ -255,7 +257,7 @@ func (database *DatabaseInterface) GetValidatorDeliveredHeaderReporter(ctx conte
 
 	for rows.Next() {
 		proposer := databaseTypes.ValidatorDeliveredHeaderDatabase{}
-		err = rows.Scan(&proposer.Slot, &proposer.ProposerPubkey, &proposer.BlockHash, &proposer.Value)
+		err = rows.Scan(&proposer.Slot, &proposer.ProposerPubkey, &proposer.BlockHash, &proposer.BidValue)
 		if err != nil {
 			return nil, err
 		}

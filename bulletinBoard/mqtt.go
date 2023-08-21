@@ -78,7 +78,7 @@ func (relayClient *RelayMQTT) publishBulletinBoard(topic bulletinBoardTypes.MQTT
 
 	relayToken := relayClient.Client.Publish(string(topic), 0, false, message)
 
-	timeout := relayToken.WaitTimeout(time.Duration(100000000000000000))
+	timeout := relayToken.WaitTimeout(time.Duration(mqttTimeout))
 	if !timeout {
 		return errors.New("Timeout Sending To Broker")
 	}

@@ -22,16 +22,17 @@ func (s *PonRegistrySubgraph) GetBuilders() ([]ponPoolTypes.Builder, error) {
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Add("Content-Type", "application/json")
 	res, err := s.Client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
-
 	builderResponse := new(ponPoolTypes.BuilderPool)
 	if err := json.NewDecoder(res.Body).Decode(&builderResponse); err != nil {
 		return nil, err
 	}
+
 	return builderResponse.Data.Builders, nil
 }
 
@@ -42,6 +43,7 @@ func (s *PonRegistrySubgraph) GetValidators() ([]ponPoolTypes.Validator, error) 
 
 		return nil, err
 	}
+	req.Header.Add("Content-Type", "application/json")
 	res, err := s.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -62,6 +64,7 @@ func (s *PonRegistrySubgraph) GetReporters() ([]ponPoolTypes.Reporter, error) {
 
 		return nil, err
 	}
+	req.Header.Add("Content-Type", "application/json")
 	res, err := s.Client.Do(req)
 	if err != nil {
 		return nil, err

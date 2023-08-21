@@ -141,7 +141,7 @@ func (relay *Relay) TESThandleProposerHeader(w http.ResponseWriter, req *http.Re
 
 	bidDB := databaseTypes.ValidatorDeliveredHeaderDatabase{
 		Slot:           proposerReq.Slot,
-		Value:          *bid.Bid.Data.Message.Value.ToBig(),
+		BidValue:       0,
 		BlockHash:      bid.Bid.Data.Message.Header.BlockHash.String(),
 		ProposerPubkey: proposerReq.ProposerPubKeyHex,
 	}

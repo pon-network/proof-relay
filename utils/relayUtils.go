@@ -245,6 +245,9 @@ func (relay *RelayUtils) ValidatorIndexToPubkey(index uint64, network uint64) (P
 		if index == 2 {
 			validator = "0xa3a32b0f8b4ddb83f1a0a853d81dd725dfe577d4f4c3db8ece52ce2b026eca84815c1a7e8e92a4de3d755733bf7e4a9b"
 		}
+		if index == 3 {
+			validator = "0x88c141df77cd9d8d7a71a75c826c41a9c9f03c6ee1b180f3e7852f6a280099ded351b58d66e653af8e42816a4d8f532e"
+		}
 	}
 
 	var validatorPublicKey PublicKey

@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/attestantio/go-builder-client v0.3.0
 	github.com/attestantio/go-eth2-client v0.16.3
-	github.com/bsn-eng/pon-golang-types v0.0.0-20230726145725-0542417d84d5
+	github.com/bsn-eng/pon-golang-types v0.0.0-20230814040058-2cbf4a53302b
 	github.com/consensys/gnark-crypto v0.11.0
 	github.com/eclipse/paho.mqtt.golang v1.4.2
 	github.com/ethereum/go-ethereum v1.11.6
@@ -16,7 +16,6 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/holiman/uint256 v1.2.2
 	github.com/lib/pq v1.10.9
-	github.com/newrelic/go-agent/v3 v3.21.1
 	github.com/prysmaticlabs/go-bitfield v0.0.0-20210809151128-385d8c5e3fb7
 	github.com/r3labs/sse/v2 v2.10.0
 	github.com/sirupsen/logrus v1.9.0
@@ -55,10 +54,7 @@ require (
 	golang.org/x/net v0.10.0 // indirect
 	golang.org/x/sync v0.2.0 // indirect
 	golang.org/x/sys v0.8.0 // indirect
-	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
-	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
-	google.golang.org/grpc v1.55.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/cenkalti/backoff.v1 v1.1.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

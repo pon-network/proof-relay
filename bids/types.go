@@ -1,6 +1,7 @@
 package bids
 
 import (
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -27,4 +28,5 @@ type BidBoard struct {
 	log            *logrus.Entry
 	bulletinBoard  bulletinboard.RelayMQTT
 	bidTimeout     time.Duration
+	bidMutex       sync.Mutex
 }

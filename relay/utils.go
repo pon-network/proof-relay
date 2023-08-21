@@ -76,7 +76,7 @@ func SignedBuilderBid(builderBid builderTypes.BuilderBlockBid, sk *bls.SecretKey
 	header := builderBid.Message.ExecutionPayloadHeader
 
 	builderBidSubmission := capellaAPI.BuilderBid{
-		Value:  uint256.NewInt(builderBid.Message.Value),
+		Value:  uint256.MustFromBig(builderBid.Message.Value),
 		Header: header,
 		Pubkey: publicKey,
 	}

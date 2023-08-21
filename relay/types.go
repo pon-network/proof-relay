@@ -2,6 +2,7 @@ package relay
 
 import (
 	"encoding/json"
+	"math/big"
 	"net/http"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 	bulletinBoardTypes "github.com/bsn-eng/pon-golang-types/bulletinBoard"
 	databaseTypes "github.com/bsn-eng/pon-golang-types/database"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	newrelic "github.com/newrelic/go-agent/v3/newrelic"
 	"github.com/sirupsen/logrus"
 
 	beaconclient "github.com/pon-pbs/bbRelay/beaconinterface"
@@ -56,22 +56,20 @@ func (t Transaction) String() string {
 }
 
 type Relay struct {
-	db              *database.DatabaseInterface
-	ponPool         *ponpool.PonRegistrySubgraph
-	bulletinBoard   *bulletinboard.RelayMQTT
-	beaconClient    *beaconclient.MultiBeaconClient
-	bidBoard        *bidBoard.BidBoard
-	URL             string
-	blsSk           *bls.SecretKey
-	log             *logrus.Entry
-	reporterServer  *reporter.ReporterServer
-	network         EthNetwork
-	publicKey       phase0.BLSPubKey
-	client          *http.Client
-	server          *http.Server
-	relayutils      *utils.RelayUtils
-	newRelicApp     *newrelic.Application
-	newRelicEnabled bool
+	db             *database.DatabaseInterface
+	ponPool        *ponpool.PonRegistrySubgraph
+	bulletinBoard  *bulletinboard.RelayMQTT
+	beaconClient   *beaconclient.MultiBeaconClient
+	bidBoard       *bidBoard.BidBoard
+	URL            string
+	blsSk          *bls.SecretKey
+	log            *logrus.Entry
+	reporterServer *reporter.ReporterServer
+	network        EthNetwork
+	publicKey      phase0.BLSPubKey
+	client         *http.Client
+	server         *http.Server
+	relayutils     *utils.RelayUtils
 }
 
 type RelayParams struct {
@@ -97,10 +95,6 @@ type RelayParams struct {
 	BidTimeOut time.Duration
 
 	Sk *bls.SecretKey
-
-	NewRelicApp        string
-	NewRelicLicense    string
-	NewRelicForwarding bool
 }
 
 type EthNetwork struct {
@@ -145,4 +139,10 @@ type ProposerPayload struct {
 	Version   spec.DataVersion
 	Bellatrix *bellatrix.ExecutionPayload
 	Capella   *ExecutionPayload
+}
+
+type BuilderWinningBid struct {
+	BidID             string  `json:"bid_id"`
+	HighestBidValue   big.Int `json:"highest_bid_value"`
+	HighestBidBuilder string  `json:"highest_bid_builder"`
 }

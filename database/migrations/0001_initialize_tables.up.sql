@@ -9,9 +9,12 @@ CREATE TABLE IF NOT EXISTS builder_block_submissions (
     inserted_at               TIMESTAMP NOT NULL default current_timestamp,
     slot                      BIGINT NOT NULL,
     builder_pubkey            VARCHAR(98) NOT NULL,
-    builder_signature         VARCHAR(132) NOT NULL,
+    builder_signature         varchar(66) NOT NULL,
+	block_hash                varchar(66) NOT NULL,
 	rpbs				      TEXT NOT NULL,
-    transaction_byte          TEXT NOT NULL
+	rpbs_public_key			  TEXT NOT NULL,
+    transaction_byte          TEXT NOT NULL,
+	bid_value                 TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_builder_builder_block_submissions ON builder_block_submissions(builder_pubkey);
 CREATE INDEX IF NOT EXISTS idx_slot_builder_block_submissions ON builder_block_submissions(slot);
@@ -44,7 +47,7 @@ CREATE TABLE IF NOT EXISTS validator_header_delivered (
     slot                        BIGINT NOT NULL,
 	proposer_pubkey             VARCHAR(98) NOT NULL,
     block_hash                  VARCHAR(98) NOT NULL,
-	value                       BIGINT
+	bid_value                   DECIMAL(20,0)
 );
 CREATE INDEX IF NOT EXISTS idx_slot_validator_header_delivered ON validator_header_delivered(slot);
 CREATE INDEX IF NOT EXISTS idx_slot_validator_header_delivered ON validator_header_delivered(proposer_pubkey);
@@ -57,8 +60,8 @@ CREATE INDEX IF NOT EXISTS idx_validator_header_delivered ON block_builders(stat
 
 CREATE TABLE IF NOT EXISTS reporters (
   reporter_pubkey     varchar(98) NOT NULL PRIMARY KEY,
-	active    	        BOOLEAN NOT NULL,
-	report_count        INTEGER NOT NULL
+  active    	      BOOLEAN NOT NULL,
+  report_count        INTEGER NOT NULL
 );
 
 

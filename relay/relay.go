@@ -2,10 +2,14 @@ package relay
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/json"
+	"encoding/asn1"
+	"math/big"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -21,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/go-redis/redis/v9"
 	"github.com/gorilla/mux"
-	"github.com/newrelic/go-agent/v3/newrelic"
 	"github.com/sirupsen/logrus"
 
 	beaconclient "github.com/pon-pbs/bbRelay/beaconinterface"
@@ -103,22 +106,6 @@ func NewRelayAPI(params *RelayParams, log logrus.Entry) (relay *Relay, err error
 		log:       &log,
 	}
 
-	if params.NewRelicApp != "" {
-		app, err := newrelic.NewApplication(
-			newrelic.ConfigAppName(params.NewRelicApp),
-			newrelic.ConfigLicense(params.NewRelicLicense),
-			newrelic.ConfigAppLogForwardingEnabled(params.NewRelicForwarding),
-		)
-		if err != nil {
-			log.WithError(err).Error("New Relic Couldn't Setup")
-		}
-		relayAPI.newRelicApp = app
-		relayAPI.newRelicEnabled = true
-	} else {
-		log.Warn("New Relic Closed")
-		relayAPI.newRelicEnabled = false
-	}
-
 	return relayAPI, nil
 }
 
@@ -130,7 +117,7 @@ func (relay *Relay) Routes() http.Handler {
 	r.HandleFunc("/eth/v1/builder/validators", relay.handleRegisterValidator).Methods(http.MethodPost)
 
 	r.HandleFunc("/relay/v1/builder/blocks", relay.handleSubmitBlock).Methods(http.MethodPost)
-	r.HandleFunc("/relay/v1/builder/bounty_bids", relay.handleBountyBids).Methods(http.MethodPost)
+	// r.HandleFunc("/relay/v1/builder/bounty_bids", relay.handleBountyBids).Methods(http.MethodPost)
 
 	r.HandleFunc("/eth/v1/builder/header/{slot:[0-9]+}/{parent_hash:0x[a-fA-F0-9]+}/{pubkey:0x[a-fA-F0-9]+}", relay.handleProposerHeader).Methods(http.MethodGet)
 	r.HandleFunc("/eth/v1/builder/blinded_blocks", relay.handleProposerPayload).Methods(http.MethodPost)
@@ -207,9 +194,9 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	/// @dev Bounty Bid Time Should be [slot_time- 9, slot_time - 10]
-	if !(blockTimestamp >= (slot_time-10) && blockTimestamp <= (slot_time-9)) {
-		relay.log.Warn("Bounty Bid Sent Wrong Time")
+	/// @dev Bounty Bid Time Should be [slot_time + 2, slot_time + 3]
+	if blockTimestamp > (slot_time+3) || blockTimestamp < (slot_time+2) {
+		relay.log.Warnf("Bounty Bid Sent Wrong Time, Got %d, Expecting between %d,%d", blockTimestamp, slot_time-10, slot_time-9)
 		relay.RespondError(w, http.StatusBadRequest, "Bounty Bid Sent Wrong Time")
 		return
 	}
@@ -227,9 +214,9 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 	}
 
 	openAuctionWinningBid, err := relay.bidBoard.GetOpenAuctionHighestBid(builderBlock.Message.Slot)
-	if builderBlock.Message.Value < 2*openAuctionWinningBid {
+	if builderBlock.Message.Value.Cmp(big.NewInt(0).Mul(openAuctionWinningBid, big.NewInt(2))) == -1 {
 		relay.log.Warn("Bounty Amount Not Sufficient")
-		relay.RespondError(w, http.StatusBadRequest, fmt.Sprintf("Bounty Amount Not Sufficient, Expecting %d", 2*openAuctionWinningBid))
+		relay.RespondError(w, http.StatusBadRequest, fmt.Sprintf("Bounty Amount Not Sufficient, Expecting %d", big.NewInt(0).Mul(openAuctionWinningBid, big.NewInt(2))))
 		return
 	}
 
@@ -293,7 +280,14 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	pubkey, err := crypto.Ecrecover(crypto.Keccak256Hash(builderBlock.EcdsaSignature[:]).Bytes(), builderBlock.EcdsaSignature[:])
+	blockBidMsgBytes, err := builderBlock.Message.HashTreeRoot()
+	if err != nil {
+		relay.log.Error("could get block bid message hash tree root", "err", err)
+		relay.RespondError(w, http.StatusBadRequest, "could get block bid message hash tree root")
+		return
+	}
+
+	pubkey, err := crypto.Ecrecover(blockBidMsgBytes[:], builderBlock.EcdsaSignature[:])
 	if err != nil {
 		relay.log.Error("Could not recover ECDSA pubkey", "err", err)
 		relay.RespondError(w, http.StatusInternalServerError, "Could not recover ECDSA pubkey")
@@ -311,6 +305,36 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 	if strings.ToLower(pubkeyAddress.String()) != strings.ToLower(builderBlock.Message.BuilderWalletAddress.String()) {
 		relay.log.Errorf("ECDSA pubkey does not match wallet address %s pubkeyAddress %s", pubkeyAddress.String(), builderBlock.Message.BuilderWalletAddress.String())
 		relay.RespondError(w, http.StatusBadRequest, "ECDSA pubkey does not match wallet address")
+		return
+	}
+
+	/* @dev 
+		Once the public key is obained and verified from the signature as that
+		of the builder, we can check if this public key signed the block bid message, 
+		and not some other data.
+	*/
+	blockBidMsgBytes, err := builderBlock.Message.HashTreeRoot()
+	if err != nil {
+		relay.log.Error("could not marshal block bid msg", "err", err)
+		relay.RespondError(w, http.StatusInternalServerError, "could not marshal block bid msg")
+		return
+	}
+
+	var ecdsaSignature struct {
+		R, S *big.Int
+	}
+	_, err = asn1.Unmarshal(builderBlock.EcdsaSignature[:], &ecdsaSignature)
+	if err != nil {
+		relay.log.Error("Failed to parse ECDSA signature")
+		relay.RespondError(w, http.StatusBadRequest, "Failed to parse ECDSA signature")
+		return
+	}
+
+	// @dev Verify the signature was created over the block bid message.
+	valid := ecdsa.Verify(ecdsaPubkey, blockBidMsgBytes[:], ecdsaSignature.R, ecdsaSignature.S)
+	if !valid {
+		relay.log.Error("ECDSA Signature Invalid")
+		relay.RespondError(w, http.StatusBadRequest, "ECDSA Signature Invalid")
 		return
 	}
 
@@ -393,13 +417,21 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	rpbsString, err := json.Marshal(*builderBlock.Message.RPBS)
+	if err != nil {
+		relay.log.Errorf("Couldn't Get RPBS String")
+		relay.RespondError(w, http.StatusBadRequest, "Couldn't Get RPBS String")
+		return
+	}
 	builderDbBlock := databaseTypes.BuilderBlockDatabase{
 		Slot:             builderBlock.Message.Slot,
 		BuilderPubkey:    builderBlock.Message.BuilderWalletAddress.String(),
+		BuilderBidHash:   builderBlock.Message.ExecutionPayloadHeader.BlockHash.String(),
 		BuilderSignature: builderBlock.EcdsaSignature.String(),
-		RPBS:             *builderBlock.Message.RPBS,
+		RPBS:             string(rpbsString),
+		RpbsPublicKey:    builderBlock.Message.RPBSPubkey,
 		TransactionByte:  hexutil.Encode(builderBlock.Message.PayoutPoolTransaction),
-		Value:            builderBlock.Message.Value,
+		BidValue:         *builderBlock.Message.Value,
 	}
 
 	defer func() {
@@ -410,7 +442,7 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 		}
 	}()
 
-	builderBid := &builderTypes.BuilderBidRelay{
+	builderBid := &BuilderWinningBid{
 		BidID:             builderDbBlock.Hash(),
 		HighestBidValue:   highestBidValue,
 		HighestBidBuilder: highestBidBuilder,
@@ -471,7 +503,7 @@ func (relay *Relay) handleSubmitBlock(w http.ResponseWriter, req *http.Request) 
 	} else if err != nil && errors.Is(err, redis.Nil) {
 		relay.log.Info("No Payload Sent For Slot")
 	} else {
-		relay.log.WithError(err).Error("Payload Delivered For Slot, You Are Late.....")
+		relay.log.Errorf("Payload Delivered For Slot %d, You Are Late.....", builderBlock.Message.Slot)
 		relay.RespondError(w, http.StatusBadRequest, fmt.Sprintf("Payload For Slot %d Delivered For Builder %s", builderBlock.Message.Slot, deliveredPayloadBuilder))
 		return
 	}
@@ -531,14 +563,21 @@ func (relay *Relay) handleSubmitBlock(w http.ResponseWriter, req *http.Request) 
 		relay.RespondError(w, http.StatusBadRequest, "ECDSA pubkey does not match wallet address")
 		return
 	}
-
+	rpbsString, err := json.Marshal(*builderBlock.Message.RPBS)
+	if err != nil {
+		relay.log.Errorf("Couldn't Get RPBS String")
+		relay.RespondError(w, http.StatusBadRequest, "Couldn't Get RPBS String")
+		return
+	}
 	builderDbBlock := databaseTypes.BuilderBlockDatabase{
 		Slot:             builderBlock.Message.Slot,
 		BuilderPubkey:    builderBlock.Message.BuilderWalletAddress.String(),
 		BuilderSignature: builderBlock.EcdsaSignature.String(),
-		RPBS:             *builderBlock.Message.RPBS,
+		BuilderBidHash:   builderBlock.Message.ExecutionPayloadHeader.BlockHash.String(),
+		RPBS:             string(rpbsString),
+		RpbsPublicKey:    builderBlock.Message.RPBSPubkey,
 		TransactionByte:  hexutil.Encode(builderBlock.Message.PayoutPoolTransaction),
-		Value:            builderBlock.Message.Value,
+		BidValue:         *builderBlock.Message.Value,
 	}
 
 	defer func() {
@@ -607,7 +646,7 @@ func (relay *Relay) handleSubmitBlock(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	builderBid := &builderTypes.BuilderBidRelay{
+	builderBid := &BuilderWinningBid{
 		BidID:             builderDbBlock.Hash(),
 		HighestBidValue:   highestBidValue,
 		HighestBidBuilder: highestBidBuilder,
@@ -656,9 +695,9 @@ func (relay *Relay) handleProposerHeader(w http.ResponseWriter, req *http.Reques
 
 	bidDB := databaseTypes.ValidatorDeliveredHeaderDatabase{
 		Slot:           proposerReq.Slot,
-		Value:          *bid.Bid.Data.Message.Value.ToBig(),
 		BlockHash:      bid.Bid.Data.Message.Header.BlockHash.String(),
 		ProposerPubkey: proposerReq.ProposerPubKeyHex,
+		BidValue:       bid.Bid.Data.Message.Value.Uint64(),
 	}
 
 	err = relay.db.PutValidatorDeliveredHeader(req.Context(), bidDB)
@@ -702,7 +741,7 @@ func (relay *Relay) handleProposerPayload(mevBoost http.ResponseWriter, req *htt
 	proposerPubkey, err := relay.relayutils.ValidatorIndexToPubkey(uint64(payload.Message.ProposerIndex), relay.network.Network)
 	if err != nil {
 		relay.log.WithError(err).WithFields(logrus.Fields{
-			"slot": uint64(payload.Message.ProposerIndex),
+			"proposer": uint64(payload.Message.ProposerIndex),
 		}).Error("Could Not Get Proposer Public Key For Proposer")
 
 		relay.RespondError(mevBoost, http.StatusBadRequest, fmt.Sprintf("Could Not Get Proposer Public Key For Proposer %d", uint64(payload.Message.ProposerIndex)))

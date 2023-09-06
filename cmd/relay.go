@@ -56,6 +56,7 @@ var relayCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		log := *logrus.NewEntry(logrus.New()).WithFields(logrus.Fields{
 			"package": "Relay",
+			"version": RelayVersion,
 		})
 
 		if len(beaconNodeURIs) == 0 {
@@ -128,6 +129,8 @@ var relayCmd = &cobra.Command{
 			BidTimeOut: bid,
 
 			Sk: secretKey,
+
+			Version: RelayVersion,
 		}
 
 		srv, err := relay.NewRelayAPI(opts, log)

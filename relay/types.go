@@ -70,6 +70,7 @@ type Relay struct {
 	client         *http.Client
 	server         *http.Server
 	relayutils     *utils.RelayUtils
+	version        string
 }
 
 type RelayParams struct {
@@ -95,6 +96,8 @@ type RelayParams struct {
 	BidTimeOut time.Duration
 
 	Sk *bls.SecretKey
+
+	Version string
 }
 
 type EthNetwork struct {
@@ -145,4 +148,12 @@ type BuilderWinningBid struct {
 	BidID             string  `json:"bid_id"`
 	HighestBidValue   big.Int `json:"highest_bid_value"`
 	HighestBidBuilder string  `json:"highest_bid_builder"`
+}
+
+type RelayConfig struct {
+	MQTTBroker string `json:"mqtt_broker"`
+	MQTTPort   uint16 `json:"mqtt_port"`
+	PublicKey  string `json:"public_key"`
+	Chain      uint64 `json:"chain"`
+	Slot       uint64 `json:"current_slot"`
 }

@@ -58,11 +58,6 @@ https://camo.githubusercontent.com/915b7be44ada53c290eb157634330494ebe3e30a/6874
 
 #### Reporter
 
-[![Reporter Repository](
-https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white
-)](https://github.com/pon-pbs/pon-reporter)
-
-- Docker coming soon
 - Visit [Reporter Repository](https://github.com/pon-pbs/pon-reporter)
 
     ```Note - The reporter is under development so always use the latest version of reporter```
@@ -79,7 +74,18 @@ https://img.shields.io/badge/Documentation-Docusaurus-green)](https://docs.pon.n
 
 ### Building From Docker
 
-![](https://img.shields.io/badge/Coming-Soon-red)
+[![Relay Docker](
+https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white
+)](https://hub.docker.com/r/blockswap/pon-relay)
+
+To run relay using docker-
+
+```shell
+docker pull blockswap/pon-relay
+docker run --network=host blockswap/pon-relay relay
+```
+While running using docker, use command line arguments same as other ways
+
 
 ### Building From Source
 
@@ -170,9 +176,15 @@ make swagger
 make serve-swagger
 ```
 
-## New Relic
+### Whitelisted Relays
 
-PON Relay comes with support for new relic. If you want to run it, just provide the --new-relic-app and --new-relic-license when running the relay and you are good to go
+| Relay ECDSA | Relay BLS Public Key | Relay API |
+|--|--|--|
+| 0x4b7D8790bE2000cCCDBa4b8Ef4F2f76A5ccd1427 | 0x89daf9bf6113ec91fdbee11778ab1e1bb64f4ccc2532bdc2bb808c93a83946ac36bce00cf2496ce2b19a20f0030cd2bd | relayer.0xblockswap.com |
+
+### Getting Your Relay Whitelisted
+
+Make a PR that adds your details to whitelisted relay table and we will approve your relay and add to the payout pool.
 
 
 

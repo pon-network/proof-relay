@@ -33,6 +33,7 @@ func NewMQTTClient(clientParameters bulletinBoardTypes.RelayMQTTOpts, beaconClie
 	relayClient := new(RelayMQTT)
 
 	relayClient.Broker = clientParameters.Broker
+	relayClient.Port = clientParameters.Port
 	relayClient.BeaconInterface = beaconClient
 
 	relayClient.Log = logrus.NewEntry(logrus.New()).WithFields(logrus.Fields{

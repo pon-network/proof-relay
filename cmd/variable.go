@@ -58,3 +58,5 @@ var (
 	writeTimeoutDefault          = "10s"
 	idleTimeoutDefault           = "10s"
 )
+
+var RelayVersion = "dev"

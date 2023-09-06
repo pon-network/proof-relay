@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -104,6 +103,7 @@ func NewRelayAPI(params *RelayParams, log logrus.Entry) (relay *Relay, err error
 		blsSk:     params.Sk,
 		publicKey: publickey,
 		log:       &log,
+		version:   params.Version,
 	}
 
 	return relayAPI, nil
@@ -113,6 +113,7 @@ func (relay *Relay) Routes() http.Handler {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/relay", relay.handleLanding).Methods(http.MethodGet)
+	r.HandleFunc("/relay/config", relay.handleRelayConfig).Methods(http.MethodGet)
 	r.HandleFunc("/eth/v1/builder/status", relay.handleStatus).Methods(http.MethodGet)
 	r.HandleFunc("/eth/v1/builder/validators", relay.handleRegisterValidator).Methods(http.MethodPost)
 
@@ -175,6 +176,19 @@ func (relay *Relay) handleStatus(w http.ResponseWriter, req *http.Request) {
 
 func (relay *Relay) handleRegisterValidator(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
+}
+
+func (relay *Relay) handleRelayConfig(w http.ResponseWriter, req *http.Request) {
+	relay.beaconClient.BeaconData.Mu.Lock()
+	defer relay.beaconClient.BeaconData.Mu.Unlock()
+	relayConfig := RelayConfig{
+		relay.bulletinBoard.Broker,
+		uint16(relay.bulletinBoard.Port),
+		relay.publicKey.String(),
+		relay.network.Network,
+		relay.beaconClient.BeaconData.CurrentSlot,
+	}
+	relay.RespondOK(w, &relayConfig)
 }
 
 func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
@@ -307,13 +321,13 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 		relay.RespondError(w, http.StatusBadRequest, "ECDSA pubkey does not match wallet address")
 		return
 	}
-
+	
 	/* @dev 
 		Once the public key is obained and verified from the signature as that
 		of the builder, we can check if this public key signed the block bid message, 
 		and not some other data.
 	*/
-	blockBidMsgBytes, err := builderBlock.Message.HashTreeRoot()
+	blockBidMsgBytes, err = builderBlock.Message.HashTreeRoot()
 	if err != nil {
 		relay.log.Error("could not marshal block bid msg", "err", err)
 		relay.RespondError(w, http.StatusInternalServerError, "could not marshal block bid msg")

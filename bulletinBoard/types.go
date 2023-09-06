@@ -29,8 +29,8 @@ type RelayMQTTChannels struct {
 }
 
 type RelayMQTT struct {
-	Broker string
-
+	Broker        string
+	Port          uint64
 	ClientOptions *pahoMQTT.ClientOptions
 	Client        pahoMQTT.Client
 

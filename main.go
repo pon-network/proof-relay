@@ -5,6 +5,9 @@ import (
 	_ "github.com/pon-pbs/bbRelay/docs"
 )
 
+var RelayVersion = "dev"
+
 func main() {
+	cmd.RelayVersion = RelayVersion
 	cmd.Execute()
 }

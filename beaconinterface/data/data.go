@@ -10,6 +10,7 @@ import (
 type BeaconData struct {
 	CurrentSlot  uint64
 	CurrentEpoch uint64
+	CurrentForkVersion string
 
 	CurrentHead beaconTypes.HeadEventData
 
@@ -20,9 +21,8 @@ type BeaconData struct {
 	AllValidatorsByPubkey    AllValidatorsByPubkeyMap
 	AllValidatorsByIndex     AllValidatorsByIndexMap
 
-	CloseCh            chan struct{}
 	HeadSlotC          chan beaconTypes.HeadEventData
-	PayloadAttributesC chan beaconTypes.PayloadAttributesEventData
+	PayloadAttributesC chan beaconTypes.PayloadAttributesEvent
 }
 
 type RandaoMap map[uint64]common.Hash

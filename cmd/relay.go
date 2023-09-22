@@ -29,6 +29,7 @@ func init() {
 	relayCmd.Flags().StringVar(&maxIdleConnections, "max-idle-connections", maxIdleConnectionsDefault, "Maximum Idle Connections")
 	relayCmd.Flags().StringVar(&maxTimeConnection, "max-idle-timeout", maxTimeConnectionDefault, "Maximum Idle Timeout")
 	relayCmd.Flags().StringVar(&dbDriver, "db-driver", dbDriverDefault, "Database Driver")
+	relayCmd.Flags().BoolVar(&deleteTables, "purge", deleteTablesDefault, "Delete Database")
 
 	relayCmd.Flags().StringVar(&ponPoolURL, "pon-pool", ponPoolURLDefault, "Pon Pool URL")
 	relayCmd.Flags().StringVar(&ponPoolAPIKey, "pon-pool-API-Key", ponPoolAPIKeyDefault, "Pon Pool API Key")
@@ -48,6 +49,7 @@ func init() {
 	relayCmd.Flags().StringVar(&writeTimeout, "relay-write-timeout", writeTimeoutDefault, "Relay Write Timeout")
 	relayCmd.Flags().StringVar(&idleTimeout, "relay-idle-timeout", idleTimeoutDefault, "Relay Idle Timeout")
 
+	relayCmd.Flags().StringVar(&discordWebhook, "discord-webhook", discordWebhookDefault, "Discord Webhook For Relay")
 }
 
 var relayCmd = &cobra.Command{
@@ -110,6 +112,7 @@ var relayCmd = &cobra.Command{
 			DbURL:          postgresURL,
 			DatabaseParams: *databaseOpts,
 			DbDriver:       databaseTypes.DatabaseDriver(dbDriver),
+			DeleteTables:   deleteTables,
 
 			PonPoolURL:    ponPoolURL,
 			PonPoolAPIKey: ponPoolAPIKey,
@@ -131,6 +134,8 @@ var relayCmd = &cobra.Command{
 			Sk: secretKey,
 
 			Version: RelayVersion,
+
+			DiscordWebhook: discordWebhook,
 		}
 
 		srv, err := relay.NewRelayAPI(opts, log)

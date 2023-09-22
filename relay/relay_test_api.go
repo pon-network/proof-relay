@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -13,6 +14,7 @@ import (
 	capella "github.com/attestantio/go-eth2-client/spec/capella"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	bulletinBoardTypes "github.com/bsn-eng/pon-golang-types/bulletinBoard"
+	commonTypes "github.com/bsn-eng/pon-golang-types/common"
 	databaseTypes "github.com/bsn-eng/pon-golang-types/database"
 	"github.com/go-redis/redis/v9"
 	"github.com/gorilla/mux"
@@ -22,10 +24,18 @@ import (
 
 func (relay *Relay) handleProposerTestPayload(w http.ResponseWriter, req *http.Request) {
 
-	payload := new(capellaAPI.SignedBlindedBeaconBlock)
+	payload := new(commonTypes.VersionedSignedBlindedBeaconBlock)
 	if err := json.NewDecoder(req.Body).Decode(payload); err != nil {
-		relay.log.WithError(err).Warn("Payload request failed to decode")
-		relay.RespondError(w, http.StatusBadRequest, err.Error())
+		relay.log.WithError(err).Warn("Proposer payload request failed to decode")
+		relay.RespondError(w, http.StatusBadRequest, fmt.Sprintf("Proposer payload request failed to decode. %s", err.Error()))
+		return
+	}
+
+	// unpack the obtained versioned signed blinded beacon block into a base signed blinded beacon block for access
+	baseSignedBlindedBeaconBlock, err := payload.ToBaseSignedBlindedBeaconBlock()
+	if err != nil {
+		relay.log.WithError(err).Warn("could not convert versioned signed blinded beacon block to base signed blinded beacon block")
+		relay.RespondError(w, http.StatusBadRequest, fmt.Sprintf("could not convert versioned signed blinded beacon block to base signed blinded beacon block. %s", err.Error()))
 		return
 	}
 
@@ -52,7 +62,7 @@ func (relay *Relay) handleProposerTestPayload(w http.ResponseWriter, req *http.R
 	}
 
 	proposerBlock := &databaseTypes.ValidatorReturnedBlockDatabase{
-		Signature:      payload.Signature.String(),
+		Signature:      baseSignedBlindedBeaconBlock.Signature.String(),
 		Slot:           uint64(slot),
 		BlockHash:      blockHash,
 		ProposerPubkey: proposerPubkey,
@@ -81,14 +91,12 @@ func (relay *Relay) handleProposerTestPayload(w http.ResponseWriter, req *http.R
 		return
 	}
 
-	getPayloadResponse := new(ExecutionPayload)
+	getPayloadResponse := new(commonTypes.VersionedExecutionPayload)
 	if err := json.NewDecoder(resp.Body).Decode(&getPayloadResponse); err != nil {
 		relay.log.WithError(err).Warn("getPayload request failed to decode")
 		relay.RespondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	PayloadResponse := ProposerPayload{Bellatrix: nil, Capella: getPayloadResponse}
 
 	defer func() {
 		errs := relay.bidBoard.PutPayloadDelivered(slot, blockSubmission.BuilderWalletAddress)
@@ -98,12 +106,12 @@ func (relay *Relay) handleProposerTestPayload(w http.ResponseWriter, req *http.R
 	}()
 
 	proposerBulletinBoard := bulletinBoardTypes.SlotPayloadRequest{
-		Slot:     uint64(payload.Message.Slot),
+		Slot:     uint64(baseSignedBlindedBeaconBlock.Message.Slot),
 		Proposer: proposerPubkey,
 	}
 	relay.bulletinBoard.Channel.SlotPayloadChannel <- proposerBulletinBoard
 
-	relay.RespondOK(w, &PayloadResponse)
+	relay.RespondOK(w, &getPayloadResponse)
 	relay.log.WithFields(logrus.Fields{
 		"Slot": slot,
 	}).Info("Payload Delivered")
@@ -139,10 +147,12 @@ func (relay *Relay) TESThandleProposerHeader(w http.ResponseWriter, req *http.Re
 		relay.RespondError(w, http.StatusBadRequest, "Parameters Not As Per Winning Bid")
 	}
 
+	builderBidSubmission := bid.Bid.Data.Message
+
 	bidDB := databaseTypes.ValidatorDeliveredHeaderDatabase{
 		Slot:           proposerReq.Slot,
 		BidValue:       0,
-		BlockHash:      bid.Bid.Data.Message.Header.BlockHash.String(),
+		BlockHash:      "",
 		ProposerPubkey: proposerReq.ProposerPubKeyHex,
 	}
 
@@ -161,11 +171,11 @@ func (relay *Relay) TESThandleProposerHeader(w http.ResponseWriter, req *http.Re
 	relay.bulletinBoard.Channel.ProposerHeaderChannel <- proposerBulletinBoard
 
 	relay.log.WithFields(logrus.Fields{
-		"value":     bid.Bid.Data.Message.Value.String(),
-		"blockHash": bid.Bid.Data.Message.Header.BlockHash.String(),
+		"value":     builderBidSubmission.Value.String(),
+		"blockHash": "",
 	}).Info("Bid Delivered To Proposer")
 
-	go relay.testBuilderCall(bid.Slot, bid.Bid.Data.Message.Header.BlockHash)
+	go relay.testBuilderCall(bid.Slot, phase0.Hash32([32]byte{}))
 	relay.RespondOK(w, &bid.Bid)
 }
 

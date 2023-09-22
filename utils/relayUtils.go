@@ -1,11 +1,17 @@
 package utils
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/attestantio/go-eth2-client/spec/phase0"
 	relayTypes "github.com/bsn-eng/pon-golang-types/relay"
 	"github.com/go-redis/redis/v9"
 	"github.com/sirupsen/logrus"
@@ -24,9 +30,11 @@ type RelayUtils struct {
 	proposerUtils *ProposerUtils
 	builderUtils  *BuilderUtils
 	reporterUtils *ReporterUtils
+
+	Discord *DiscordConfig
 }
 
-func NewRelayUtils(db *database.DatabaseInterface, beaconClient *beaconclient.MultiBeaconClient, ponPool ponpool.PonRegistrySubgraph, redisInterface redisPackage.RedisInterface) *RelayUtils {
+func NewRelayUtils(db *database.DatabaseInterface, beaconClient *beaconclient.MultiBeaconClient, ponPool ponpool.PonRegistrySubgraph, redisInterface redisPackage.RedisInterface, discordWebhook string) *RelayUtils {
 	proposerutils := &ProposerUtils{
 		ProposerStatus: ProposerUpdates{
 			Mu:             sync.Mutex{},
@@ -46,13 +54,22 @@ func NewRelayUtils(db *database.DatabaseInterface, beaconClient *beaconclient.Mu
 	}
 
 	builderutils := &BuilderUtils{
-		BuilderLast:    make(map[string]string),
+		BuilderLast:    make(map[string]bool),
 		Mu:             sync.Mutex{},
 		RedisInterface: &redisInterface,
 		Log: *logrus.NewEntry(logrus.New()).WithFields(logrus.Fields{
 			"package": "RelayUtils",
 			"utils":   "Builder",
 		}),
+	}
+
+	discordInterface := DiscordConfig{}
+	if discordWebhook != "" {
+		discordInterface.discordWebhook = discordWebhook
+		discordInterface.sendDiscord = true
+		discordInterface.client = &http.Client{}
+	} else {
+		discordInterface.sendDiscord = false
 	}
 
 	reporterutils := &ReporterUtils{
@@ -72,6 +89,7 @@ func NewRelayUtils(db *database.DatabaseInterface, beaconClient *beaconclient.Mu
 		proposerUtils: proposerutils,
 		builderUtils:  builderutils,
 		reporterUtils: reporterutils,
+		Discord:       &discordInterface,
 	}
 }
 
@@ -164,14 +182,14 @@ func (builderInterface *BuilderUtils) GetBuilders(ponPool ponpool.PonRegistrySub
 	defer builderInterface.Mu.Unlock()
 	builderInterface.Log.Infof("Updating %d block builders in Redis...", len(builders))
 	for _, builder := range builders {
-		if builder.Status == builderInterface.BuilderLast[builder.BuilderPubkey] {
+		if builder.Status == builderInterface.BuilderLast[builder.Builder.BuilderPubkey] {
 			continue
 		}
-		err = builderInterface.SetBuilderStatus(builder.BuilderPubkey, builder.Status)
+		err = builderInterface.SetBuilderStatus(builder.Builder.BuilderPubkey, builder.Status)
 		if err != nil {
 			builderInterface.Log.WithError(err).Error("failed to set block builder status in redis")
 		}
-		builderInterface.BuilderLast[builder.BuilderPubkey] = builder.Status
+		builderInterface.BuilderLast[builder.Builder.BuilderPubkey] = builder.Status
 	}
 	builderInterface.Log.Infof("Updating %d block builders in Database...", len(builders))
 	err = db.PutBuilders(builders)
@@ -212,7 +230,7 @@ func (proposerInterface *ProposerUtils) SetValidatorStatus(validator string, sta
 	return proposerInterface.RedisInterface.Client.HSet(context.Background(), keyValidatorStatus, validator, status).Err()
 }
 
-func (builderInterface *BuilderUtils) SetBuilderStatus(builder string, status string) error {
+func (builderInterface *BuilderUtils) SetBuilderStatus(builder string, status bool) error {
 	return builderInterface.RedisInterface.Client.HSet(context.Background(), keyBuilderStatus, builder, status).Err()
 }
 
@@ -225,7 +243,11 @@ func (relay *RelayUtils) BuilderStatus(builder string) (BuilderStatus bool, err 
 	if errors.Is(err, redis.Nil) {
 		return false, nil
 	}
-	status := res == "1"
+	status, err := strconv.ParseBool(res)
+	if err != nil {
+		return false, err
+	}
+
 	return status, err
 }
 
@@ -256,4 +278,60 @@ func (relay *RelayUtils) ValidatorIndexToPubkey(index uint64, network uint64) (P
 		return PublicKey{}, err
 	}
 	return validatorPublicKey, nil
+}
+
+func (relay *RelayUtils) SendDiscord(slot phase0.Slot, builder string, proposer PublicKey) error {
+	if !relay.Discord.sendDiscord {
+		return nil
+	}
+
+	discordEmbed := DiscordEmbed{
+		Image: DiscordImage{
+			URL: "https://i.ibb.co/jfXdbsL/Full-Color.jpg",
+		},
+		Fields: append([]DiscordParams{},
+			DiscordParams{
+				Name:   "Proposer",
+				Value:  proposer.String(),
+				Inline: true,
+			},
+			DiscordParams{
+				Name:   "Builder",
+				Value:  builder,
+				Inline: true,
+			},
+			DiscordParams{
+				Name:  "Slot",
+				Value: fmt.Sprintf("%d", slot),
+			}),
+	}
+
+	discordPublish := DiscordPublish{
+		Username:  "PON Relay",
+		AvatarURL: "https://i.ibb.co/PjVNXbC/pon.png",
+		Content:   "New Slot Won By PON",
+		Embeds:    append([]DiscordEmbed{}, discordEmbed),
+	}
+
+	msgbytes, err := json.Marshal(discordPublish)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(context.Background(), "POST", relay.Discord.discordWebhook, bytes.NewReader(msgbytes))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := relay.Discord.client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return errors.New(fmt.Sprintf("invalid response code: %d", resp.StatusCode))
+	}
+	return nil
 }

@@ -85,8 +85,9 @@ func (r *BidBoard) SaveBuilderBid(slot uint64, builderPubkey string, proposerPub
 								|--builderPubkey3 =
 	*/
 
+	builderBlockBid := builderHeader.Data.Message
 	bidValueKey := fmt.Sprintf("%s-%d", builderValueKeyBid, slot)
-	err = r.redisInterface.Client.HSet(context.Background(), bidValueKey, builderPubkey, fmt.Sprintf("%d", builderHeader.Data.Message.Value)).Err()
+	err = r.redisInterface.Client.HSet(context.Background(), bidValueKey, builderPubkey, fmt.Sprintf("%d", builderBlockBid.Value)).Err()
 	if err != nil {
 		return err
 	}
@@ -260,7 +261,9 @@ func (b *BidBoard) GetOpenAuctionHighestBid(slot uint64) (value *big.Int, err er
 			return big.NewInt(0), err
 		}
 	}
-	return winningBid.Bid.Data.Message.Value.ToBig(), nil
+
+	builderBlockBid := winningBid.Bid.Data.Message
+	return builderBlockBid.Value, nil
 }
 
 // @dev Sets The Bounty Bid Winner

@@ -6,6 +6,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"fmt"
+	"reflect"
 
 	beaconTypes "github.com/bsn-eng/pon-golang-types/beaconclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -13,6 +15,11 @@ import (
 	beaconClient "github.com/pon-pbs/bbRelay/beaconinterface/client"
 	beaconData "github.com/pon-pbs/bbRelay/beaconinterface/data"
 )
+
+
+const NODE_TIMEOUT = 2 * time.Second
+// If node cant deliver within 2s then it is too slow as need to gaurantee bid window of 2s
+
 
 type BeaconClient struct {
 	Node               beaconClient.BeaconClientInstance
@@ -52,9 +59,8 @@ func NewMultiBeaconClient(beaconUrls []string) (*MultiBeaconClient, error) {
 		RandaoMap:                make(beaconData.RandaoMap),
 		AllValidatorsByPubkey:    make(beaconData.AllValidatorsByPubkeyMap),
 		AllValidatorsByIndex:     make(beaconData.AllValidatorsByIndexMap),
-		CloseCh:                  make(chan struct{}),
-		HeadSlotC:                make(chan beaconTypes.HeadEventData),
-		PayloadAttributesC:       make(chan beaconTypes.PayloadAttributesEventData),
+		HeadSlotC:                make(chan beaconTypes.HeadEventData, 64),
+		PayloadAttributesC:       make(chan beaconTypes.PayloadAttributesEvent, 64),
 	}}, nil
 }
 
@@ -68,25 +74,99 @@ func (b *MultiBeaconClient) Start() {
 		`SubscribeToPayloadAttributesEvents()` functions, respectively. These events are run in separate
 		goroutines to allow for concurrent processing.
 	*/
+	
+	// Ensure all nodes are alive
+	log.Info("Ensuring all clients are alive")
+	alive, err := b.ensureClientsAlive()
+	if err != nil || !alive {
+		log.Error("issue with connected beacon nodes to builder", "err", err)
+		return
+	}
+	log.Info("All clients are alive")
+
 	log.Info("Waiting for at least one client to be synced")
 	b.waitSynced()
+	log.Info("At least one client is synced, starting head and payload attributes subscriptions")
 
 	go b.SubscribeToHeadEvents(context.Background(), b.BeaconData.HeadSlotC)
 	go b.SubscribeToPayloadAttributesEvents(context.Background(), b.BeaconData.PayloadAttributesC)
 }
 
-func (b *MultiBeaconClient) Stop() {
-	close(b.BeaconData.CloseCh)
+func (b *MultiBeaconClient) ensureClientsAlive() (bool, error) {
+
+	type clientResponse struct {
+		beaconUrl string
+		GenesisData *beaconTypes.GenesisData
+	}
+	
+	results := make(chan *clientResponse, len(b.Clients))
+
+	// Iterate over the clients and check their genesis data asynchronously.
+	for _, client := range b.Clients {
+		go func(c BeaconClient) {
+			genesis, err := c.Node.Genesis()
+			if err != nil {
+				log.Error("failed to get genesis", "err", err, "endpoint", c.Node.BaseEndpoint())
+				results <- nil
+			} else {
+				results <- &clientResponse{c.Node.BaseEndpoint(), genesis}
+			}
+		}(client)
+	}
+
+	// Wait for results with a timeout of 2 seconds.
+	// If node cant deliver within 2s then it is too slow
+	// for block building as the bid window is 2s
+	timeout := time.After(NODE_TIMEOUT)
+	var receivedGenesisData map[string]*beaconTypes.GenesisData = make(map[string]*beaconTypes.GenesisData)
+
+	for i := 0; i < len(b.Clients); i++ {
+		select {
+		case genesis := <-results:
+			if genesis != nil {
+				receivedGenesisData[genesis.beaconUrl] = genesis.GenesisData
+			}
+		case <-timeout:
+			// Find out which nodes failed to respond.
+			var failedNodes []string
+			for _, client := range b.Clients {
+				if _, ok := receivedGenesisData[client.Node.BaseEndpoint()]; !ok {
+					failedNodes = append(failedNodes, client.Node.BaseEndpoint())
+				}
+			}
+			return false, fmt.Errorf("nodes took too long to respond: %v", failedNodes)
+		}
+	}
+
+	// Check if all received genesis data is the same.
+	if len(receivedGenesisData) == 0 {
+		return false, errors.New("all nodes failed to provide genesis data")
+	}
+
+	// Compare the received genesis data.
+	var knownGenesis *beaconTypes.GenesisData
+	for _, genesis := range receivedGenesisData {
+		if knownGenesis == nil {
+			knownGenesis = genesis
+		} else if !reflect.DeepEqual(knownGenesis, genesis) {
+			return false, errors.New("nodes have different genesis and fork data")
+		}
+
+	}
+
+	return true, nil
 }
+
 
 func (b *MultiBeaconClient) waitSynced() {
 	// wait for at least one client to be synced, call the sync status endpoint periodically till one is synced
 	for {
-
 		syncStatus, _ := b.SyncStatus()
+		log.Info("sync status", "syncStatus", syncStatus)
 		if syncStatus != nil && !syncStatus.IsSyncing {
 			return
 		}
+		log.Info("Waiting for at least one client to be synced")
 		time.Sleep(5 * time.Second)
 	}
 
@@ -123,7 +203,6 @@ func (b *MultiBeaconClient) UpdateRandaoMap(slot uint64) {
 	// Get the randao for the slot
 	randao, err := b.Randao(slot)
 	if err != nil {
-		log.Warn("failed to get randao", "slot", slot, "err", err)
 		return
 	}
 
@@ -200,6 +279,25 @@ func (b *MultiBeaconClient) UpdateValidatorMap() {
 	wg.Wait()
 }
 
+func (b *MultiBeaconClient) UpdateForkVersion() {
+
+	// Get the fork version for the current head
+	forkName, forkVersion, err := b.GetForkVersion(0, true)
+	if err != nil {
+		log.Warn("failed to get latest fork version", "err", err)
+		return
+	}
+
+	// Update the fork version map
+	b.BeaconData.Mu.Lock()
+	if b.BeaconData.CurrentForkVersion != forkVersion && forkVersion != "" {
+		log.Info("fork version updated", "oldFork", b.BeaconData.CurrentForkVersion, "newFork", forkName)
+		b.BeaconData.CurrentForkVersion = forkName // i.e "altair", "bellatrix", "capella", etc
+	}
+	b.BeaconData.Mu.Unlock()
+
+}
+
 func (b *MultiBeaconClient) updateValidatorMap(client BeaconClient, epoch uint64) {
 	/*
 		Update the validator map for the given epoch.
@@ -209,7 +307,7 @@ func (b *MultiBeaconClient) updateValidatorMap(client BeaconClient, epoch uint64
 	*/
 	validatorMap, err := client.Node.GetSlotProposerMap(epoch)
 	if err != nil {
-		log.Error("failed to get validator map", "err", err, "endpoint", client.Node.BaseEndpoint())
+		log.Warn("failed to get validator map", "err", err, "endpoint", client.Node.BaseEndpoint())
 		b.clientUpdate.Lock()
 		client.LastResponseStatus = 500
 		client.LastUsedTime = time.Now()
@@ -276,9 +374,7 @@ func (b *MultiBeaconClient) GetCurrentHead() (beaconTypes.HeadEventData, error) 
 	*/
 	b.BeaconData.Mu.Lock()
 	defer b.BeaconData.Mu.Unlock()
-
 	data := b.BeaconData.CurrentHead
-
 	return data, nil
 }
 
@@ -405,6 +501,7 @@ func (b *MultiBeaconClient) SyncStatus() (*beaconTypes.SyncStatusData, error) {
 	// Since this is the only function that is always called asynchronously, we can use it as the main performance updater
 	// This is the point that node speed is updated, as it is the only functino that has a uniform payload/response across all nodes
 	b.updateClientPerformance()
+
 	if b.Clients[0].SyncStatus == nil {
 		return nil, errors.New("all beacon nodes failed")
 	}

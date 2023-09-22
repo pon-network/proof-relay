@@ -3,22 +3,19 @@ package relay
 import (
 	"context"
 	"crypto/ecdsa"
-	"encoding/json"
 	"encoding/asn1"
-	"math/big"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
 
-	mevBoostAPI "github.com/attestantio/go-builder-client/api"
-	capellaAPI "github.com/attestantio/go-eth2-client/api/v1/capella"
-	"github.com/attestantio/go-eth2-client/spec"
-	capella "github.com/attestantio/go-eth2-client/spec/capella"
 	builderTypes "github.com/bsn-eng/pon-golang-types/builder"
 	bulletinBoardTypes "github.com/bsn-eng/pon-golang-types/bulletinBoard"
+	commonTypes "github.com/bsn-eng/pon-golang-types/common"
 	databaseTypes "github.com/bsn-eng/pon-golang-types/database"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -40,7 +37,7 @@ import (
 )
 
 func NewRelayAPI(params *RelayParams, log logrus.Entry) (relay *Relay, err error) {
-	dataBase, err := database.NewDatabase(params.DbURL, params.DatabaseParams, params.DbDriver)
+	dataBase, err := database.NewDatabase(params.DbURL, params.DatabaseParams, params.DbDriver, params.DeleteTables)
 	if err != nil {
 		log.WithError(err).Fatal("Failed Database")
 		return nil, err
@@ -70,7 +67,7 @@ func NewRelayAPI(params *RelayParams, log logrus.Entry) (relay *Relay, err error
 		return nil, err
 	}
 
-	relayutils := relayUtils.NewRelayUtils(dataBase, beaconClient, *ponPool, *redisInterface)
+	relayutils := relayUtils.NewRelayUtils(dataBase, beaconClient, *ponPool, *redisInterface, params.DiscordWebhook)
 	go relayutils.StartUtils()
 
 	bidInterface := bids.NewBidBoard(*redisInterface, *bulletinBoard, params.BidTimeOut)
@@ -196,15 +193,25 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 	builderBlock := new(builderTypes.BuilderBlockBid)
 
 	if err := json.NewDecoder(req.Body).Decode(&builderBlock); err != nil {
-		relay.log.WithError(err).Warn("Could Not Convert Payload To Builder Submisioon")
+		relay.log.WithError(err).Warn("Could Not Convert Payload To Builder Submission")
+		relay.RespondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	versionedExecutionPayloadHeader := builderBlock.Message.ExecutionPayloadHeader
+
+	// Unpack the obtained versioned execution payload header into a base execution payload header for access
+	baseExecutionPayloadHeader, err := versionedExecutionPayloadHeader.ToBaseExecutionPayloadHeader()
+	if err != nil {
+		relay.log.WithError(err).Warn("could not convert versioned execution payload header to base execution payload header")
 		relay.RespondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	slot_time := relay.BlockSlotTimestamp(builderBlock.Message.Slot)
-	if builderBlock.Message.ExecutionPayloadHeader.Timestamp != slot_time {
-		relay.log.Warnf("incorrect timestamp. got %d, expected %d", builderBlock.Message.ExecutionPayloadHeader.Timestamp, slot_time)
-		relay.RespondError(w, http.StatusBadRequest, fmt.Sprintf("incorrect timestamp. got %d", builderBlock.Message.ExecutionPayloadHeader.Timestamp))
+	if baseExecutionPayloadHeader.Timestamp != slot_time {
+		relay.log.Warnf("incorrect timestamp. got %d, expected %d", baseExecutionPayloadHeader.Timestamp, slot_time)
+		relay.RespondError(w, http.StatusBadRequest, fmt.Sprintf("incorrect timestamp. got %d", baseExecutionPayloadHeader.Timestamp))
 		return
 	}
 
@@ -231,12 +238,6 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 	if builderBlock.Message.Value.Cmp(big.NewInt(0).Mul(openAuctionWinningBid, big.NewInt(2))) == -1 {
 		relay.log.Warn("Bounty Amount Not Sufficient")
 		relay.RespondError(w, http.StatusBadRequest, fmt.Sprintf("Bounty Amount Not Sufficient, Expecting %d", big.NewInt(0).Mul(openAuctionWinningBid, big.NewInt(2))))
-		return
-	}
-
-	if builderBlock.Message.ExecutionPayloadHeader.WithdrawalsRoot == EmptyWithdrawalsRoot {
-		relay.log.Warn("Empty Withdrawal")
-		relay.RespondError(w, http.StatusBadRequest, "Empty Withdrawal")
 		return
 	}
 
@@ -321,18 +322,12 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 		relay.RespondError(w, http.StatusBadRequest, "ECDSA pubkey does not match wallet address")
 		return
 	}
-	
-	/* @dev 
-		Once the public key is obained and verified from the signature as that
-		of the builder, we can check if this public key signed the block bid message, 
-		and not some other data.
+
+	/* @dev
+	Once the public key is obained and verified from the signature as that
+	of the builder, we can check if this public key signed the block bid message,
+	and not some other data.
 	*/
-	blockBidMsgBytes, err = builderBlock.Message.HashTreeRoot()
-	if err != nil {
-		relay.log.Error("could not marshal block bid msg", "err", err)
-		relay.RespondError(w, http.StatusInternalServerError, "could not marshal block bid msg")
-		return
-	}
 
 	var ecdsaSignature struct {
 		R, S *big.Int
@@ -376,13 +371,20 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	forkVersion, err := builderBlock.Message.ExecutionPayloadHeader.Version()
+	if err != nil {
+		relay.log.WithError(err).Error("could not get fork version of buuilder payload header")
+		relay.RespondError(w, http.StatusInternalServerError, fmt.Sprintf("could not get fork version of buuilder payload header: %v", err))
+		return
+	}
+
 	getHeaderResponse := relayUtils.GetHeaderResponse{
-		Version: VersionCapella,
+		Version: forkVersion,
 		Data:    signedBuilderBid,
 	}
 
 	getPayloadHeaderResponse := relayUtils.GetPayloadUtils{
-		Version:              VersionCapella,
+		Version:              forkVersion,
 		Data:                 builderBlock.Message.ExecutionPayloadHeader,
 		API:                  builderBlock.Message.Endpoint,
 		BuilderWalletAddress: builderBlock.Message.BuilderWalletAddress.String(),
@@ -440,7 +442,7 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 	builderDbBlock := databaseTypes.BuilderBlockDatabase{
 		Slot:             builderBlock.Message.Slot,
 		BuilderPubkey:    builderBlock.Message.BuilderWalletAddress.String(),
-		BuilderBidHash:   builderBlock.Message.ExecutionPayloadHeader.BlockHash.String(),
+		BuilderBidHash:   baseExecutionPayloadHeader.BlockHash.String(),
 		BuilderSignature: builderBlock.EcdsaSignature.String(),
 		RPBS:             string(rpbsString),
 		RpbsPublicKey:    builderBlock.Message.RPBSPubkey,
@@ -465,7 +467,7 @@ func (relay *Relay) handleBountyBids(w http.ResponseWriter, req *http.Request) {
 	relay.log.WithFields(logrus.Fields{
 		"Builder": builderBlock.Message.BuilderWalletAddress.String(),
 		"Value":   builderBlock.Message.Value,
-	}).Info("received block from builder")
+	}).Info("received bounty block from builder")
 
 	relay.RespondOK(w, &builderBid)
 
@@ -477,16 +479,20 @@ func (relay *Relay) handleSubmitBlock(w http.ResponseWriter, req *http.Request) 
 	builderBlock := new(builderTypes.BuilderBlockBid)
 
 	if err := json.NewDecoder(req.Body).Decode(&builderBlock); err != nil {
-		relay.log.WithError(err).Warn("Could Not Convert Patload To Builder Submisioon")
+		relay.log.WithError(err).Warn("Could Not Convert Patload To Builder Submission")
 		relay.RespondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Garbage Penalty Should be Penalised
 
-	if builderBlock.Message.ExecutionPayloadHeader.WithdrawalsRoot == EmptyWithdrawalsRoot {
-		relay.log.Warn("Empty Withdrawal")
-		relay.RespondError(w, http.StatusBadRequest, "Empty Withdrawal")
+	versionedExecutionPayloadHeader := builderBlock.Message.ExecutionPayloadHeader
+
+	// Unpack the obtained versioned execution payload header into a base execution payload header for access
+	baseExecutionPayloadHeader, err := versionedExecutionPayloadHeader.ToBaseExecutionPayloadHeader()
+	if err != nil {
+		relay.log.WithError(err).Warn("could not convert versioned execution payload header to base execution payload header")
+		relay.RespondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -503,9 +509,9 @@ func (relay *Relay) handleSubmitBlock(w http.ResponseWriter, req *http.Request) 
 	}
 
 	slot_time := relay.BlockSlotTimestamp(builderBlock.Message.Slot)
-	if builderBlock.Message.ExecutionPayloadHeader.Timestamp != slot_time {
-		relay.log.Warnf("incorrect timestamp. got %d, expected %d", builderBlock.Message.ExecutionPayloadHeader.Timestamp, slot_time)
-		relay.RespondError(w, http.StatusBadRequest, fmt.Sprintf("incorrect timestamp. got %d", builderBlock.Message.ExecutionPayloadHeader.Timestamp))
+	if baseExecutionPayloadHeader.Timestamp != slot_time {
+		relay.log.Warnf("incorrect timestamp. got %d, expected %d", baseExecutionPayloadHeader.Timestamp, slot_time)
+		relay.RespondError(w, http.StatusBadRequest, fmt.Sprintf("incorrect timestamp. got %d", baseExecutionPayloadHeader.Timestamp))
 		return
 	}
 
@@ -587,7 +593,7 @@ func (relay *Relay) handleSubmitBlock(w http.ResponseWriter, req *http.Request) 
 		Slot:             builderBlock.Message.Slot,
 		BuilderPubkey:    builderBlock.Message.BuilderWalletAddress.String(),
 		BuilderSignature: builderBlock.EcdsaSignature.String(),
-		BuilderBidHash:   builderBlock.Message.ExecutionPayloadHeader.BlockHash.String(),
+		BuilderBidHash:   baseExecutionPayloadHeader.BlockHash.String(),
 		RPBS:             string(rpbsString),
 		RpbsPublicKey:    builderBlock.Message.RPBSPubkey,
 		TransactionByte:  hexutil.Encode(builderBlock.Message.PayoutPoolTransaction),
@@ -621,13 +627,20 @@ func (relay *Relay) handleSubmitBlock(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	forkVersion, err := builderBlock.Message.ExecutionPayloadHeader.Version()
+	if err != nil {
+		relay.log.WithError(err).Error("could not get fork version of buuilder payload header")
+		relay.RespondError(w, http.StatusInternalServerError, fmt.Sprintf("could not get fork version of buuilder payload header: %v", err))
+		return
+	}
+
 	getHeaderResponse := relayUtils.GetHeaderResponse{
-		Version: VersionCapella,
+		Version: forkVersion,
 		Data:    signedBuilderBid,
 	}
 
 	getPayloadHeaderResponse := relayUtils.GetPayloadUtils{
-		Version:              VersionCapella,
+		Version:              forkVersion,
 		Data:                 builderBlock.Message.ExecutionPayloadHeader,
 		API:                  builderBlock.Message.Endpoint,
 		BuilderWalletAddress: builderBlock.Message.BuilderWalletAddress.String(),
@@ -707,11 +720,20 @@ func (relay *Relay) handleProposerHeader(w http.ResponseWriter, req *http.Reques
 		relay.RespondError(w, http.StatusBadRequest, "Parameters Not As Per Winning Bid")
 	}
 
+	builderBidSubmission := bid.Bid.Data.Message
+	versionedExcutionPayloadHeader := builderBidSubmission.ExecutionPayloadHeader
+
+	baseExecutionPayloadHeader, err := versionedExcutionPayloadHeader.ToBaseExecutionPayloadHeader()
+	if err != nil {
+		relay.log.WithError(err).Error("Failed To Convert versionedExcutionPayloadHeader to baseExecutionPayloadHeader")
+		relay.RespondError(w, http.StatusBadRequest, err.Error())
+	}
+
 	bidDB := databaseTypes.ValidatorDeliveredHeaderDatabase{
 		Slot:           proposerReq.Slot,
-		BlockHash:      bid.Bid.Data.Message.Header.BlockHash.String(),
+		BlockHash:      baseExecutionPayloadHeader.BlockHash.String(),
 		ProposerPubkey: proposerReq.ProposerPubKeyHex,
-		BidValue:       bid.Bid.Data.Message.Value.Uint64(),
+		BidValue:       builderBidSubmission.Value.Uint64(),
 	}
 
 	err = relay.db.PutValidatorDeliveredHeader(req.Context(), bidDB)
@@ -729,8 +751,8 @@ func (relay *Relay) handleProposerHeader(w http.ResponseWriter, req *http.Reques
 	relay.bulletinBoard.Channel.ProposerHeaderChannel <- proposerBulletinBoard
 
 	relay.log.WithFields(logrus.Fields{
-		"value":     bid.Bid.Data.Message.Value.String(),
-		"blockHash": bid.Bid.Data.Message.Header.BlockHash.String(),
+		"value":     builderBidSubmission.Value.String(),
+		"blockHash": baseExecutionPayloadHeader.BlockHash.String(),
 	}).Info("Bid Delivered To Proposer")
 
 	relay.RespondOK(w, &bid.Bid)
@@ -738,37 +760,57 @@ func (relay *Relay) handleProposerHeader(w http.ResponseWriter, req *http.Reques
 
 func (relay *Relay) handleProposerPayload(mevBoost http.ResponseWriter, req *http.Request) {
 
-	payload := new(capellaAPI.SignedBlindedBeaconBlock)
+	payload := new(commonTypes.VersionedSignedBlindedBeaconBlock)
 	if err := json.NewDecoder(req.Body).Decode(payload); err != nil {
 		relay.log.WithError(err).Warn("Proposer payload request failed to decode")
 		relay.RespondError(mevBoost, http.StatusBadRequest, fmt.Sprintf("Proposer payload request failed to decode. %s", err.Error()))
 		return
 	}
 
-	slot := payload.Message.Slot
-	blockHash := payload.Message.Body.ExecutionPayloadHeader.BlockHash.String()
+	// unpack the obtained versioned signed blinded beacon block into a base signed blinded beacon block for access
+	baseSignedBlindedBeaconBlock, err := payload.ToBaseSignedBlindedBeaconBlock()
+	if err != nil {
+		relay.log.WithError(err).Warn("could not convert versioned signed blinded beacon block to base signed blinded beacon block")
+		relay.RespondError(mevBoost, http.StatusBadRequest, fmt.Sprintf("could not convert versioned signed blinded beacon block to base signed blinded beacon block. %s", err.Error()))
+		return
+	}
+
+	slot := baseSignedBlindedBeaconBlock.Message.Slot
+	blockHash := baseSignedBlindedBeaconBlock.Message.Body.ExecutionPayloadHeader.BlockHash.String()
 	relay.log.WithFields(logrus.Fields{
 		"slot":      slot,
 		"blockHash": blockHash,
 	}).Info("Proposer GetPayload Request")
 
-	proposerPubkey, err := relay.relayutils.ValidatorIndexToPubkey(uint64(payload.Message.ProposerIndex), relay.network.Network)
+	proposerPubkey, err := relay.relayutils.ValidatorIndexToPubkey(uint64(baseSignedBlindedBeaconBlock.Message.ProposerIndex), relay.network.Network)
 	if err != nil {
 		relay.log.WithError(err).WithFields(logrus.Fields{
-			"proposer": uint64(payload.Message.ProposerIndex),
+			"proposer": uint64(baseSignedBlindedBeaconBlock.Message.ProposerIndex),
 		}).Error("Could Not Get Proposer Public Key For Proposer")
 
-		relay.RespondError(mevBoost, http.StatusBadRequest, fmt.Sprintf("Could Not Get Proposer Public Key For Proposer %d", uint64(payload.Message.ProposerIndex)))
+		relay.RespondError(mevBoost, http.StatusBadRequest, fmt.Sprintf("Could Not Get Proposer Public Key For Proposer %d", uint64(baseSignedBlindedBeaconBlock.Message.ProposerIndex)))
 		return
 	}
 
 	if len(proposerPubkey) == 0 {
-		relay.log.WithError(err).Error(fmt.Sprintf("Could Not Get Proposer Public Key For Proposer %d", uint64(payload.Message.ProposerIndex)))
-		relay.RespondError(mevBoost, http.StatusBadRequest, fmt.Sprintf("Could Not Get Proposer Public Key For Proposer %d", uint64(payload.Message.ProposerIndex)))
+		relay.log.WithError(err).Error(fmt.Sprintf("Could Not Get Proposer Public Key For Proposer %d", uint64(baseSignedBlindedBeaconBlock.Message.ProposerIndex)))
+		relay.RespondError(mevBoost, http.StatusBadRequest, fmt.Sprintf("Could Not Get Proposer Public Key For Proposer %d", uint64(baseSignedBlindedBeaconBlock.Message.ProposerIndex)))
 		return
 	}
 
-	ok, err := signing.VerifySignature(payload.Message, relay.network.DomainBeaconCapella, proposerPubkey[:], payload.Signature[:])
+	signedBlindedBeaconBlock_version, err := payload.Version()
+	if err != nil {
+		relay.log.WithError(err).Warn("could not get fork version of signed blinded beacon block")
+		relay.RespondError(mevBoost, http.StatusBadRequest, fmt.Sprintf("could not get fork version of signed blinded beacon block. %s", err.Error()))
+		return
+	}
+
+	versionedBlindedBeaconBlock, err := commonTypes.ConstructBlindedBeaconBlock(
+		signedBlindedBeaconBlock_version,
+		*baseSignedBlindedBeaconBlock.Message,
+	)
+
+	ok, err := signing.VerifySignature(&versionedBlindedBeaconBlock, relay.network.DomainBeaconCapella, proposerPubkey[:], baseSignedBlindedBeaconBlock.Signature[:])
 	if !ok || err != nil {
 		relay.log.WithError(err).Warn("could not verify payload signature")
 		relay.RespondError(mevBoost, http.StatusBadRequest, "could not verify payload signature")
@@ -783,7 +825,7 @@ func (relay *Relay) handleProposerPayload(mevBoost http.ResponseWriter, req *htt
 	}
 
 	proposerBlock := &databaseTypes.ValidatorReturnedBlockDatabase{
-		Signature:      payload.Signature.String(),
+		Signature:      baseSignedBlindedBeaconBlock.Signature.String(),
 		Slot:           uint64(slot),
 		BlockHash:      blockHash,
 		ProposerPubkey: proposerPubkey.String(),
@@ -796,6 +838,7 @@ func (relay *Relay) handleProposerPayload(mevBoost http.ResponseWriter, req *htt
 		return
 	}
 
+	// @dev Get Payload From Builder by sending the buuilder the signed blinded beacon block
 	resp, err := sendHTTPRequest(*relay.client, blockSubmission.API, payload)
 	if err != nil {
 		relay.log.WithError(err).Error("getPayload request to builder from relay failed")
@@ -811,14 +854,21 @@ func (relay *Relay) handleProposerPayload(mevBoost http.ResponseWriter, req *htt
 		return
 	}
 
-	getPayloadResponse := new(capella.ExecutionPayload)
+	// @dev Decode builder's versioned execution payload response
+	getPayloadResponse := new(commonTypes.VersionedExecutionPayload)
 	if err := json.NewDecoder(resp.Body).Decode(&getPayloadResponse); err != nil {
 		relay.log.WithError(err).Error("getPayload request from builder failed to decode")
 		relay.RespondError(mevBoost, http.StatusBadRequest, fmt.Sprintf("getPayload request from builder failed to decode. %s", err.Error()))
 		return
 	}
 
-	PayloadResponse := mevBoostAPI.VersionedExecutionPayload{Version: spec.DataVersionCapella, Capella: getPayloadResponse}
+	// unpack the obtained versioned execution payload into a base execution payload for access
+	baseExecutionPayload, err := getPayloadResponse.ToBaseExecutionPayload()
+	if err != nil {
+		relay.log.WithError(err).Warn("could not convert versioned execution payload to base execution payload")
+		relay.RespondError(mevBoost, http.StatusBadRequest, fmt.Sprintf("could not convert versioned execution payload to base execution payload. %s", err.Error()))
+		return
+	}
 
 	defer func() {
 		payloadJSON, _ := json.Marshal(getPayloadResponse)
@@ -828,7 +878,7 @@ func (relay *Relay) handleProposerPayload(mevBoost http.ResponseWriter, req *htt
 		payloadDBDelivered := &databaseTypes.ValidatorDeliveredPayloadDatabase{
 			Slot:           uint64(slot),
 			ProposerPubkey: proposerPubkey.String(),
-			BlockHash:      PayloadResponse.Capella.BlockHash.String(),
+			BlockHash:      baseExecutionPayload.BlockHash.String(),
 			Payload:        payloadJSON,
 		}
 		err = relay.db.PutValidatorDeliveredPayload(context.Background(), *payloadDBDelivered)
@@ -844,10 +894,24 @@ func (relay *Relay) handleProposerPayload(mevBoost http.ResponseWriter, req *htt
 		}
 	}()
 
-	relay.RespondOK(mevBoost, &PayloadResponse)
+	defer func() {
+		errs := relay.relayutils.SendDiscord(slot, blockSubmission.BuilderWalletAddress, proposerPubkey)
+		if errs != nil {
+			relay.log.WithError(errs).Error("Couldn't Send To Discord")
+		}
+	}()
+
+	executionPayloadResponse, err := getPayloadResponse.WithVersionName()
+	if err != nil {
+		relay.log.WithError(err).Error("could not get payload version name")
+		relay.RespondError(mevBoost, http.StatusBadRequest, fmt.Sprintf("could not get payload version name. %s", err.Error()))
+		return
+	}
+
+	relay.RespondOK(mevBoost, &executionPayloadResponse)
 
 	proposerBulletinBoard := bulletinBoardTypes.SlotPayloadRequest{
-		Slot:     uint64(payload.Message.Slot),
+		Slot:     uint64(baseSignedBlindedBeaconBlock.Message.Slot),
 		Proposer: proposerPubkey.String(),
 	}
 

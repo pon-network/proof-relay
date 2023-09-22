@@ -21,9 +21,16 @@ func NewRedisInterface(redisURI string) (*RedisInterface, error) {
 	if _, err := client.Ping(context.Background()).Result(); err != nil {
 		return nil, err
 	}
+
+	_, err = client.FlushAll(context.Background()).Result()
+	if err != nil {
+		return nil, err
+	}
+
 	return &RedisInterface{
 		Client: client,
 	}, nil
+
 }
 
 func (r *RedisInterface) HSetObj(key, field string, value any, expiration time.Duration) (err error) {

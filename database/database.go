@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"os"
+	"path/filepath"
 
 	databaseTypes "github.com/bsn-eng/pon-golang-types/database"
 	ponPoolTypes "github.com/bsn-eng/pon-golang-types/ponPool"
@@ -14,7 +16,7 @@ import (
 
 func NewDatabase(url string,
 	parameters databaseTypes.DatabaseOpts,
-	dbDriver databaseTypes.DatabaseDriver) (*DatabaseInterface, error) {
+	dbDriver databaseTypes.DatabaseDriver, deleteTables bool) (*DatabaseInterface, error) {
 
 	database, err := sql.Open(string(dbDriver), url)
 	if err != nil {
@@ -30,6 +32,21 @@ func NewDatabase(url string,
 			"package": "Database",
 		})}
 
+	if deleteTables {
+		err := dbInterface.purgeDatabase()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Apply migration
+	currentDir, err := os.Getwd()
+	migrationFilePath := filepath.Join(currentDir, "database", "migrations", "0001_initialize_tables.up.sql")
+
+	if err := dbInterface.applyMigration(migrationFilePath); err != nil {
+		return nil, err
+	}
+
 	dbInterface.NewDatabaseOpts()
 	logrus.WithFields(logrus.Fields{
 		"Max Connections":      parameters.MaxConnections,
@@ -38,6 +55,37 @@ func NewDatabase(url string,
 	}).Info("Database Opts")
 
 	return dbInterface, err
+}
+
+func (db *DatabaseInterface) purgeDatabase() error {
+	db.Log.Info("Deleting Tables")
+	currentDir, err := os.Getwd()
+	migrationFilePath := filepath.Join(currentDir, "database", "migrations", "0001_remove_tables.down.sql")
+	migrationSQL, err := os.ReadFile(migrationFilePath)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.DB.Exec(string(migrationSQL))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (db *DatabaseInterface) applyMigration(migrationFilePath string) error {
+	migrationSQL, err := os.ReadFile(migrationFilePath)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.DB.Exec(string(migrationSQL))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (database *DatabaseInterface) PutValidatorDeliveredPayload(ctx context.Context,
@@ -144,17 +192,18 @@ func (database *DatabaseInterface) PutReporters(reporters []ponPoolTypes.Reporte
 	return nil
 }
 
-func (database *DatabaseInterface) PutBuilders(builders []ponPoolTypes.Builder) error {
+func (database *DatabaseInterface) PutBuilders(builders []ponPoolTypes.BuilderInterface) error {
 
 	query := `INSERT INTO block_builders
-		(builder_pubkey, status) VALUES ($1, $2) 
+		(builder_pubkey, builder_stake, status) VALUES ($1, $2, $3) 
 		ON CONFLICT (builder_pubkey) DO UPDATE SET
-		status = $2`
+		status = $3`
 	for _, builder := range builders {
 		_, err := database.DB.ExecContext(
 			context.Background(),
 			query,
-			builder.BuilderPubkey,
+			builder.Builder.BuilderPubkey,
+			builder.Builder.BalanceStaked,
 			builder.Status,
 		)
 		if err != nil {

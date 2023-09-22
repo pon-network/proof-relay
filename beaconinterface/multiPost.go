@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	beaconTypes "github.com/bsn-eng/pon-golang-types/beaconclient"
+	commonTypes "github.com/bsn-eng/pon-golang-types/common"
 	"github.com/ethereum/go-ethereum/log"
 )
 
-func (b *MultiBeaconClient) PublishBlock(ctx context.Context, block beaconTypes.SignedBeaconBlock) (err error) {
+func (b *MultiBeaconClient) PublishBlock(ctx context.Context, block commonTypes.VersionedSignedBeaconBlock) (err error) {
 	/*
 		Post a block to beacon chain using all clients
 		No penalty for multiple submissions
@@ -41,7 +41,8 @@ func (b *MultiBeaconClient) PublishBlock(ctx context.Context, block beaconTypes.
 				successfulCount++
 				if responseCount == len(b.Clients) {
 					// All clients have responded, so return the error (if any)
-					// sucessfulCount is definitely > 0, so no need to check
+					// There has been at least one successful submission,
+					// since succesfulCount has definitely been incremented in this case
 					log.Info("Successfully submitted block to beacon chain", "successes", successfulCount, "failures", len(b.Clients)-successfulCount)
 					err = nil
 
@@ -53,6 +54,7 @@ func (b *MultiBeaconClient) PublishBlock(ctx context.Context, block beaconTypes.
 				err = e
 				if responseCount == len(b.Clients) {
 					// All clients have responded, so return the error (if any)
+
 					if successfulCount == 0 {
 						if err == nil {
 							err = errors.New("failed to submit block to any clients")
@@ -69,7 +71,7 @@ func (b *MultiBeaconClient) PublishBlock(ctx context.Context, block beaconTypes.
 	}
 }
 
-func publishAsync(ctx context.Context, clientUpdate *sync.Mutex, client BeaconClient, block beaconTypes.SignedBeaconBlock, submissionError chan<- error) {
+func publishAsync(ctx context.Context, clientUpdate *sync.Mutex, client BeaconClient, block commonTypes.VersionedSignedBeaconBlock, submissionError chan<- error) {
 
 	err := client.Node.PublishBlock(ctx, block)
 	if err != nil {

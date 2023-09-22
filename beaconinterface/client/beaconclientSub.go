@@ -47,7 +47,7 @@ func (b *beaconClient) SubscribeToHeadEvents(ctx context.Context, headChannel ch
 
 }
 
-func (b *beaconClient) SubscribeToPayloadAttributesEvents(ctx context.Context, payloadAttributesC chan beaconTypes.PayloadAttributesEventData) {
+func (b *beaconClient) SubscribeToPayloadAttributesEvents(ctx context.Context, payloadAttributesC chan beaconTypes.PayloadAttributesEvent) {
 	/*
 		Subscribe to payload attributes events from the beacon chain
 		Events are sent to the payloadAttributesC channel
@@ -58,13 +58,18 @@ func (b *beaconClient) SubscribeToPayloadAttributesEvents(ctx context.Context, p
 	for {
 		client := sse.NewClient(fmt.Sprintf("%s/eth/v1/events?topics=payload_attributes", b.beaconEndpoint.String()))
 		// Use sse client to subscribe to events
-		err := client.SubscribeRawWithContext(ctx, func(msg *sse.Event) {
+		err := client.SubscribeRawWithContext(ctx,func(msg *sse.Event) {
 			var event beaconTypes.PayloadAttributesEvent
 			if err := json.Unmarshal(msg.Data, &event); err != nil {
 				log.Warn("payload event subscription failed", "error", err)
 				return
 			}
-			payloadAttributesC <- *event.Data
+
+			if event.Data == nil {
+				log.Warn("payload event subscription failed", "error", "payload data is nil")
+				return
+			}
+			payloadAttributesC <- event
 
 		})
 		if err != nil {

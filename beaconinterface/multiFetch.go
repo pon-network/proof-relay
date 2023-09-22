@@ -2,16 +2,15 @@ package beaconinterface
 
 import (
 	"errors"
-	"fmt"
-	"strconv"
 	"time"
 
 	beaconTypes "github.com/bsn-eng/pon-golang-types/beaconclient"
+	beaconData "github.com/pon-pbs/bbRelay/beaconinterface/data"
 	relayTypes "github.com/bsn-eng/pon-golang-types/relay"
+
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-
-	beaconData "github.com/pon-pbs/bbRelay/beaconinterface/data"
 )
 
 func (b *MultiBeaconClient) GetValidatorList(slot uint64) ([]*beaconTypes.ValidatorData, error) {
@@ -151,50 +150,21 @@ func (b *MultiBeaconClient) Randao(slot uint64) (randao *common.Hash, err error)
 
 	defer b.postBeaconCall()
 	for _, client := range b.Clients {
-		randao, err = client.Node.Randao(slot)
-		if err != nil {
-			log.Warn("failed to get randao", "err", err, "endpoint", client.Node.BaseEndpoint())
+		if randao, err = client.Node.Randao(slot); err != nil {
+			// log.Warn("failed to get randao", "err", err, "endpoint", client.Node.BaseEndpoint())
 			b.clientUpdate.Lock()
 			client.LastResponseStatus = 500
 			client.LastUsedTime = time.Now()
 			b.clientUpdate.Unlock()
 			continue
 		}
+
 		b.clientUpdate.Lock()
 		client.LastResponseStatus = 200
 		client.LastUsedTime = time.Now()
 		b.clientUpdate.Unlock()
 
 		return randao, err
-	}
-
-	return nil, err
-}
-
-func (b *MultiBeaconClient) GetBlock(slot uint64) (block *beaconTypes.SignedBeaconBlock, err error) {
-	/*
-		Get block of slot.
-		If any client fails, try the next one.
-		Clients are attempted by best performance first.
-		Performance is also updated in defer function (triggers background update).
-	*/
-	defer b.postBeaconCall()
-	for _, client := range b.Clients {
-		if block, err = client.Node.GetBlock(slot); err != nil {
-			log.Warn("failed to get block", "err", err, "endpoint", client.Node.BaseEndpoint())
-			b.clientUpdate.Lock()
-			client.LastResponseStatus = 500
-			client.LastUsedTime = time.Now()
-			b.clientUpdate.Unlock()
-			continue
-		}
-
-		b.clientUpdate.Lock()
-		client.LastResponseStatus = 200
-		client.LastUsedTime = time.Now()
-		b.clientUpdate.Unlock()
-
-		return block, nil
 	}
 
 	return nil, err
@@ -258,6 +228,36 @@ func (b *MultiBeaconClient) GetCurrentBlockHeader() (blockHeader *beaconTypes.Bl
 	return nil, err
 }
 
+func (b *MultiBeaconClient) GetForkVersion(slot uint64, head bool) (forkName string, forkVersion string, err error) {
+	/*
+		Get fork version of chain.
+		If any client fails, try the next one.
+		Clients are attempted by best performance first.
+		Performance is also updated in defer function (triggers background update).
+	*/
+	defer b.postBeaconCall()
+	for _, client := range b.Clients {
+
+		if forkName, forkVersion, err = client.Node.GetForkVersion(slot, head); err != nil {
+			log.Warn("failed to get fork version", "err", err, "endpoint", client.Node.BaseEndpoint())
+			b.clientUpdate.Lock()
+			client.LastResponseStatus = 500
+			client.LastUsedTime = time.Now()
+			b.clientUpdate.Unlock()
+			continue
+		}
+
+		b.clientUpdate.Lock()
+		client.LastResponseStatus = 200
+		client.LastUsedTime = time.Now()
+		b.clientUpdate.Unlock()
+
+		return forkName, forkVersion, nil
+	}
+
+	return "", "", err
+}
+
 func (b *MultiBeaconClient) GetValidatorIndex(newValidators []string, validatorIndexes *relayTypes.ValidatorIndexes) {
 	/*
 		Get Validator Public Key.
@@ -284,9 +284,8 @@ func (b *MultiBeaconClient) GetValidatorIndex(newValidators []string, validatorI
 		b.clientUpdate.Unlock()
 		validatorIndexes.Mu.Lock()
 		for _, validator := range validators.Data {
-			validatorIndex, _ := strconv.ParseInt(validator.Index, 10, 64)
-			validatorIndexes.ValidatorPubkeyIndex[fmt.Sprintf("%v", validator.Validator["pubkey"])] = uint64(validatorIndex)
-			validatorIndexes.ValidatorIndexPubkey[uint64(validatorIndex)] = fmt.Sprintf("%v", validator.Validator["pubkey"])
+			validatorIndexes.ValidatorPubkeyIndex[validator.Validator.Pubkey] = validator.Index
+			validatorIndexes.ValidatorIndexPubkey[validator.Index] = validator.Validator.Pubkey
 		}
 		validatorIndexes.Mu.Unlock()
 		break

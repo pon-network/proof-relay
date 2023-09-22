@@ -30,6 +30,8 @@ var (
 	readHeaderTimeout     string
 	writeTimeout          string
 	idleTimeout           string
+	deleteTables          bool
+	discordWebhook        string
 )
 
 var (
@@ -57,6 +59,8 @@ var (
 	readHeaderTimeoutDefault     = "10s"
 	writeTimeoutDefault          = "10s"
 	idleTimeoutDefault           = "10s"
+	deleteTablesDefault          = false
+	discordWebhookDefault        = ""
 )
 
 var RelayVersion = "dev"

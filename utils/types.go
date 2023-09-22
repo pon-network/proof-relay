@@ -2,11 +2,11 @@ package utils
 
 import (
 	"errors"
+	"net/http"
 	"sync"
 	"time"
 
-	capellaAPI "github.com/attestantio/go-builder-client/api/capella"
-	"github.com/attestantio/go-eth2-client/spec/capella"
+	commonTypes "github.com/bsn-eng/pon-golang-types/common"
 	relayTypes "github.com/bsn-eng/pon-golang-types/relay"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/sirupsen/logrus"
@@ -59,7 +59,7 @@ type ProposerUpdates struct {
 }
 
 type BuilderUtils struct {
-	BuilderLast    map[string]string
+	BuilderLast    map[string]bool
 	Mu             sync.Mutex
 	Log            logrus.Entry
 	RedisInterface *redisPackage.RedisInterface
@@ -73,8 +73,8 @@ type ReporterUtils struct {
 }
 
 type GetHeaderResponse struct {
-	Version string                       `json:"version"`
-	Data    *capellaAPI.SignedBuilderBid `json:"data"`
+	Version string                            `json:"version"`
+	Data    *relayTypes.SignedBuilderBlockBid `json:"data"`
 }
 
 type ProposerHeaderResponse struct {
@@ -85,7 +85,7 @@ type ProposerHeaderResponse struct {
 
 type GetPayloadUtils struct {
 	Version              string
-	Data                 *capella.ExecutionPayloadHeader
+	Data                 *commonTypes.VersionedExecutionPayloadHeader
 	API                  string
 	BuilderWalletAddress string
 }
@@ -108,4 +108,31 @@ func chunkSlice(slice []string, chunkSize int) [][]string {
 	}
 
 	return chunks
+}
+
+type DiscordConfig struct {
+	sendDiscord    bool
+	discordWebhook string
+	client         *http.Client
+}
+
+type DiscordParams struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Inline bool   `json:"inline,omitempty"`
+}
+
+type DiscordImage struct {
+	URL string `json:"url"`
+}
+
+type DiscordEmbed struct {
+	Fields []DiscordParams `json:"fields"`
+	Image  DiscordImage    `json:"image"`
+}
+type DiscordPublish struct {
+	Username  string         `json:"username"`
+	AvatarURL string         `json:"avatar_url"`
+	Content   string         `json:"content"`
+	Embeds    []DiscordEmbed `json:"embeds"`
 }

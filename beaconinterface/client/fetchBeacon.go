@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"strings"
 
 	beaconTypes "github.com/bsn-eng/pon-golang-types/beaconclient"
 	"github.com/ethereum/go-ethereum/common"
@@ -56,7 +57,7 @@ func (b *beaconClient) GetValidatorList(headSlot uint64) ([]*beaconTypes.Validat
 	}
 	return validators.Data, nil
 }
-func (b *beaconClient) GetValidatorIndex(validators []string) (ValidatorBeacon, error) {
+func (b *beaconClient) GetValidatorIndex(validators []string) (*beaconTypes.GetValidatorsResponse, error) {
 
 	u := *b.beaconEndpoint
 	u.Path = "/eth/v1/beacon/states/head/validators"
@@ -66,13 +67,13 @@ func (b *beaconClient) GetValidatorIndex(validators []string) (ValidatorBeacon, 
 	}
 
 	u.RawQuery = q.Encode()
-	var validatorResponse ValidatorBeacon
-	err := b.fetchBeacon(&u, &validatorResponse)
+	resp := new(beaconTypes.GetValidatorsResponse)
+	err := b.fetchBeacon(&u, &resp)
 	if err != nil {
-		return ValidatorBeacon{}, err
+		return nil, err
 	}
 
-	return validatorResponse, nil
+	return resp, nil
 }
 
 func (b *beaconClient) Genesis() (*beaconTypes.GenesisData, error) {
@@ -111,21 +112,9 @@ func (b *beaconClient) Randao(slot uint64) (*common.Hash, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	data := resp.Data
 	return &data.Randao, err
-}
-
-func (b *beaconClient) GetBlock(slot uint64) (*beaconTypes.SignedBeaconBlock, error) {
-	// Get block for given slot
-	resp := new(beaconTypes.GetBlockResponse)
-	u := *b.beaconEndpoint
-	u.Path = fmt.Sprintf("/eth/v2/beacon/blocks/%d", slot)
-
-	err := b.fetchBeacon(&u, &resp)
-	if err != nil {
-		return nil, err
-	}
-	return resp.Data, err
 }
 
 func (b *beaconClient) GetBlockHeader(slot uint64) (*beaconTypes.BlockHeaderData, error) {
@@ -138,6 +127,7 @@ func (b *beaconClient) GetBlockHeader(slot uint64) (*beaconTypes.BlockHeaderData
 	if err != nil {
 		return nil, err
 	}
+
 	return resp.Data, err
 }
 
@@ -152,4 +142,63 @@ func (b *beaconClient) GetCurrentBlockHeader() (*beaconTypes.BlockHeaderData, er
 		return nil, err
 	}
 	return resp.Data, err
+}
+
+func (b *beaconClient) GetForkVersion(slot uint64, head bool) (forkName string, forkVersion string, err error) {
+
+	type NodeSpec struct {
+		Data map[string]string `json:"data"`
+	}
+
+	type CurrentForkData struct {
+		PreviousVersion string `json:"previous_version"`
+		CurrentVersion  string `json:"current_version"`
+		Epoch           string `json:"epoch"`
+	}
+
+	type CurrentFork struct {
+		ExecutionOptimistic bool            `json:"execution_optimistic"`
+		Finalized           bool            `json:"finalized"`
+		Data                CurrentForkData `json:"data"`
+	}
+
+	knownSpecs := make(map[string]string)
+
+	u := *b.beaconEndpoint
+
+	u.Path = "/eth/v1/config/spec"
+	specResp := new(NodeSpec)
+	err = b.fetchBeacon(&u, &specResp)
+	if err != nil {
+		return "", "", err
+	}
+
+	for k, v := range specResp.Data {
+		if strings.Contains(k, "_FORK_VERSION") {
+
+			k = strings.Replace(k, "_FORK_VERSION", "", 1)
+			k = strings.ToLower(k)
+
+			knownSpecs[v] = k
+		}
+	}
+
+	if head {
+		u.Path = "/eth/v1/beacon/states/head/fork"
+	} else {
+		u.Path = fmt.Sprintf("/eth/v2/beacon/states/%d/fork", slot)
+	}
+	currForkResp := new(CurrentFork)
+	err = b.fetchBeacon(&u, &currForkResp)
+	if err != nil {
+		return "", "", err
+	}
+
+	currentForkVersion := currForkResp.Data.CurrentVersion
+	currentForkName, ok := knownSpecs[currentForkVersion]
+	if !ok {
+		return "", "", fmt.Errorf("unknown fork version %s", currentForkVersion)
+	}
+
+	return currentForkName, currentForkVersion, err
 }

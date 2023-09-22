@@ -9,10 +9,9 @@ import (
 	"net/http"
 	"strconv"
 
-	capellaAPI "github.com/attestantio/go-builder-client/api/capella"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	builderTypes "github.com/bsn-eng/pon-golang-types/builder"
-	"github.com/holiman/uint256"
+	relayTypes "github.com/bsn-eng/pon-golang-types/relay"
 	"github.com/sirupsen/logrus"
 
 	beaconclient "github.com/pon-pbs/bbRelay/beaconinterface"
@@ -39,11 +38,20 @@ func loggingMiddleware(next http.Handler, logger logrus.Entry) http.Handler {
 }
 
 func SanityBuilderBlock(payload builderTypes.BuilderBlockBid) error {
-	if payload.Message.BlockHash.String() != payload.Message.ExecutionPayloadHeader.BlockHash.String() {
+
+	versionedExecutionPayloadHeader := payload.Message.ExecutionPayloadHeader
+
+	// Unpack the obtained versioned execution payload header into a base execution payload header for access
+	baseExecutionPayloadHeader, err := versionedExecutionPayloadHeader.ToBaseExecutionPayloadHeader()
+	if err != nil {
+		return fmt.Errorf("could not convert versioned execution payload header to base execution payload header: %w", err)
+	}
+
+	if payload.Message.BlockHash.String() != baseExecutionPayloadHeader.BlockHash.String() {
 		return errors.New("Block Hash Wrong")
 	}
 
-	if payload.Message.ParentHash.String() != payload.Message.ExecutionPayloadHeader.ParentHash.String() {
+	if payload.Message.ParentHash.String() != baseExecutionPayloadHeader.ParentHash.String() {
 		return errors.New("Block Hash Wrong")
 	}
 
@@ -71,26 +79,25 @@ func proposerParameters(payload map[string]string) (ProposerReqParams, error) {
 	return ProposerReqParams{Slot: uint64(slot), ProposerPubKeyHex: proposerPubkey, ParentHashHex: parentHash}, nil
 }
 
-func SignedBuilderBid(builderBid builderTypes.BuilderBlockBid, sk *bls.SecretKey, publicKey phase0.BLSPubKey, domain signing.Domain) (*capellaAPI.SignedBuilderBid, error) {
+func SignedBuilderBid(builderBid builderTypes.BuilderBlockBid, sk *bls.SecretKey, publicKey phase0.BLSPubKey, domain signing.Domain) (*relayTypes.SignedBuilderBlockBid, error) {
 
-	header := builderBid.Message.ExecutionPayloadHeader
-
-	builderBidSubmission := capellaAPI.BuilderBid{
-		Value:  uint256.MustFromBig(builderBid.Message.Value),
-		Header: header,
-		Pubkey: publicKey,
+	message := &relayTypes.BuilderBlockBid{
+		Value:                  builderBid.Message.Value,
+		Pubkey:                 publicKey,
+		ExecutionPayloadHeader: builderBid.Message.ExecutionPayloadHeader,
 	}
 
-	sig, err := signing.SignMessage(&builderBidSubmission, domain, sk)
+	sig, err := signing.SignMessage(message, domain, sk)
 	if err != nil {
 		return nil, err
 	}
 
-	return &capellaAPI.SignedBuilderBid{
-		Message:   &builderBidSubmission,
+	return &relayTypes.SignedBuilderBlockBid{
+		Message:   message,
 		Signature: sig,
 	}, nil
 }
+
 func NewEthNetworkDetails(network string, beaconClient *beaconclient.MultiBeaconClient) (*EthNetwork, error) {
 
 	genesisNetwork, err := beaconClient.Genesis()
@@ -109,7 +116,7 @@ func NewEthNetworkDetails(network string, beaconClient *beaconclient.MultiBeacon
 			return nil, err
 		}
 		return &EthNetwork{
-			Network:             0,
+			Network:             1,
 			GenesisTime:         genesisNetwork.GenesisTime,
 			DomainBuilder:       domainBuilder,
 			DomainBeaconCapella: domainBeaconCapella,
@@ -123,7 +130,7 @@ func NewEthNetworkDetails(network string, beaconClient *beaconclient.MultiBeacon
 			return nil, err
 		}
 		return &EthNetwork{
-			Network:             1,
+			Network:             5,
 			GenesisTime:         genesisNetwork.GenesisTime,
 			DomainBuilder:       domainBuilder,
 			DomainBeaconCapella: domainBeaconCapella,

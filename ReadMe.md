@@ -180,11 +180,14 @@ make serve-swagger
 
 | Relay ECDSA | Relay BLS Public Key | Relay API |
 |--|--|--|
-| 0x4b7D8790bE2000cCCDBa4b8Ef4F2f76A5ccd1427 | 0x89daf9bf6113ec91fdbee11778ab1e1bb64f4ccc2532bdc2bb808c93a83946ac36bce00cf2496ce2b19a20f0030cd2bd | relayer.0xblockswap.com |
+| N/A | 0xa44f64faca0209764461b2abfe3533f9f6ed1d51844974e22d79d4cfd06eff858bb434d063e512ce55a1841e66977bfd | proof-relayer.pon-relay.com |
 
 ### Getting Your Relay Whitelisted
 
 Make a PR that adds your details to whitelisted relay table and we will approve your relay and add to the payout pool.
+
+# Software is provided with no guarantees
+Please note that this relay has not been subjected to a security audit. By using this relay, there is a risk that assets could be compromised. Therefore, you use this relay at your own risk. It is provided as is, as a public good, without any guarantees.
 
 
 
